@@ -22,6 +22,13 @@ namespace Emby.Xtream.Plugin.Tests.Fakes
         public List<string> Infos { get; } = new List<string>();
 
         /// <summary>
+        /// Recorded rather than swallowed: the decision store's unreadable-store errors are the
+        /// fail-open diagnostics (ADR-C001) — a test that cannot see them cannot tell "stood
+        /// down" from "silently wiped the store".
+        /// </summary>
+        public List<string> Errors { get; } = new List<string>();
+
+        /// <summary>
         /// Debug output. Captured because some diagnostics are deliberately Debug-level —
         /// the collapse representative is one line per collapsed group, too noisy for Info,
         /// but it is the mapping that makes a wrongly-skipped series distinguishable from a
@@ -60,13 +67,6 @@ namespace Emby.Xtream.Plugin.Tests.Fakes
         public void Info(string message, params object[] paramList) => Record(Infos, message, paramList);
 
         public void Warn(string message, params object[] paramList) => Record(Warnings, message, paramList);
-
-        /// <summary>
-        /// Recorded rather than swallowed: the decision store's unreadable-store errors are the
-        /// fail-open diagnostics (ADR-C001) — a test that cannot see them cannot tell "stood
-        /// down" from "silently wiped the store".
-        /// </summary>
-        public List<string> Errors { get; } = new List<string>();
 
         public void Error(string message, params object[] paramList) => Record(Errors, message, paramList);
 

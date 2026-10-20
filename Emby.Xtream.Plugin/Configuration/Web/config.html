@@ -583,6 +583,14 @@
                             Automatically sync movies and/or series. Movies must be enabled above; series likewise.
                         </div>
                     </div>
+                    <div class="fieldDescription autoSyncScheduleMismatch" style="display:none; color:#e0a030;">
+                        The sync tasks in Emby's Scheduled Tasks have a different schedule than the
+                        settings here. Saving keeps Emby's schedule.
+                        <button class="btnApplyAutoSyncSchedule raised button-secondary" is="emby-button" type="button"
+                                style="margin-top:0.5em; display:block;">
+                            <span>Use the schedule shown here</span>
+                        </button>
+                    </div>
                     <div class="autoSyncSettings">
                         <div class="selectContainer">
                             <select class="selAutoSyncMode" is="emby-select" label="Schedule Type">
@@ -750,6 +758,24 @@
                         </div>
 
                         <hr style="border:none; border-top:1px solid rgba(128,128,128,0.15); margin:1em 0;" />
+
+                        <div class="selectContainer" style="margin-top:0.5em;">
+                            <select class="selDispatcharrStreamEndpoint" is="emby-select" label="Stream URL">
+                                <option value="proxy">Dispatcharr proxy (default)</option>
+                                <option value="xtream">Xtream server (settings above)</option>
+                            </select>
+                            <div class="fieldDescription">
+                                With the <b>proxy</b>, Dispatcharr's stats show Emby as an anonymous client. The
+                                <b>Xtream server</b> option plays from Dispatcharr's Xtream address with the username and
+                                password above, so Dispatcharr shows that user and applies its stream
+                                limits. It only takes effect when the Xtream server is your Dispatcharr server.
+                                See ADR-022.
+                            </div>
+                            <div class="fieldDescription dispatcharrStreamEndpointWarning" style="display:none; color:#e0a030;">
+                                The Xtream server URL and the Dispatcharr URL are not the same address, so the
+                                proxy will still be used. Enter the same address (including the port) in both.
+                            </div>
+                        </div>
 
                         <div class="checkboxContainer checkboxContainer-withDescription" style="margin-top:0.5em;">
                             <label>
@@ -1275,6 +1301,11 @@
                             When enabled, live TV channels from the Xtream server will be available.
                         </div>
                     </div>
+                </div>
+
+                <div class="liveTvSettings">
+
+                <div class="verticalSection">
                     <div class="selectContainer">
                         <select class="selOutputFormat" is="emby-select" label="Stream Format">
                             <option value="ts">MPEG-TS (.ts)</option>
@@ -1409,6 +1440,8 @@
                         </div>
                     </div>
                 </div>
+
+                </div><!-- end liveTvSettings -->
 
                 </div><!-- end tabLiveTv -->
 
