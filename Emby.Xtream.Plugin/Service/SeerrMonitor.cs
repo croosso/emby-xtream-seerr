@@ -9,32 +9,73 @@ namespace Emby.Xtream.Plugin.Service
 {
     /// <summary>
     /// The monitored titles pulled from Seerr for one sync run (ADR-C002):
-    /// a TMDB-ID set for movies and a normalized-name set for series.
+    /// a TMDB-ID set for movies and a normalized-name map for series.
     /// </summary>
     /// <remarks>
     /// Series carry no TMDB ID on the provider's <c>get_series</c> list payload (measured
     /// 0 of 9,979), so a series cannot be recognized by ID at gate time. The names here go
     /// through the same clean-and-sanitize pipeline the gate applies to provider titles,
     /// so both sides land on the same string.
+    /// <para>
+    /// Providers tag the same series two ways: a language prefix (<c>EN| Name</c>, handled
+    /// by the cleaning pipeline) and a first-air-year suffix (<c>Name (2008)</c>, kept by
+    /// it). The map therefore carries the watched series' known first-air year (from
+    /// Seerr's TMDB proxy), and <see cref="MatchesSeries"/> accepts a year-suffixed
+    /// provider name only when the suffix equals that year — so a same-named remake with
+    /// a different year does not over-match. A watched series with no known year matches
+    /// its exact name only.
+    /// </para>
     /// </remarks>
     internal sealed class SeerrMonitoredSnapshot
     {
-        public static readonly SeerrMonitoredSnapshot Empty =
-            new SeerrMonitoredSnapshot(new HashSet<int>(), new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        private static readonly System.Text.RegularExpressions.Regex YearSuffixRegex = new System.Text.RegularExpressions.Regex(
+            @"^(.+?)\s+\((\d{4})\)$",
+            System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        public static readonly SeerrMonitoredSnapshot Empty = Create(
+            new HashSet<int>(), new Dictionary<string, HashSet<int>>(0, StringComparer.OrdinalIgnoreCase));
 
         public HashSet<int> MovieTmdbIds { get; private set; }
-        public HashSet<string> SeriesNames { get; private set; }
 
-        private SeerrMonitoredSnapshot(HashSet<int> movieTmdbIds, HashSet<string> seriesNames)
+        /// <summary>Normalized series name → known first-air years; an empty set means the year is unknown.</summary>
+        public Dictionary<string, HashSet<int>> SeriesByYear { get; private set; }
+
+        public int SeriesNameCount { get { return SeriesByYear.Count; } }
+
+        private SeerrMonitoredSnapshot(HashSet<int> movieTmdbIds, Dictionary<string, HashSet<int>> seriesByYear)
         {
             MovieTmdbIds = movieTmdbIds;
-            SeriesNames = seriesNames;
+            SeriesByYear = seriesByYear;
+        }
+
+        private static SeerrMonitoredSnapshot Create(HashSet<int> movieTmdbIds, Dictionary<string, HashSet<int>> seriesByYear)
+        {
+            return new SeerrMonitoredSnapshot(movieTmdbIds, seriesByYear);
+        }
+
+        /// <summary>
+        /// Does a held series match a watched one? Exact normalized name always matches;
+        /// a name suffixed with <c>(YYYY)</c> matches only when the base name is watched
+        /// and the year is its known first-air year.
+        /// </summary>
+        public bool MatchesSeries(string normalizedSeriesName)
+        {
+            if (string.IsNullOrEmpty(normalizedSeriesName) || SeriesByYear.Count == 0) return false;
+            if (SeriesByYear.ContainsKey(normalizedSeriesName)) return true;
+
+            var match = YearSuffixRegex.Match(normalizedSeriesName);
+            if (!match.Success) return false;
+
+            HashSet<int> years;
+            if (!SeriesByYear.TryGetValue(match.Groups[1].Value.Trim(), out years)) return false;
+            int year;
+            return int.TryParse(match.Groups[2].Value, out year) && years.Contains(year);
         }
 
         public static SeerrMonitoredSnapshot Build(IEnumerable<SeerrWantedItem> items, Func<string, string> normalizeSeriesName)
         {
             var movies = new HashSet<int>();
-            var series = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var series = new Dictionary<string, HashSet<int>>(StringComparer.OrdinalIgnoreCase);
             foreach (var item in items)
             {
                 if (item == null || item.TmdbId <= 0) continue;
@@ -42,14 +83,21 @@ namespace Emby.Xtream.Plugin.Service
                 {
                     if (string.IsNullOrWhiteSpace(item.Title)) continue;
                     var normalized = normalizeSeriesName(item.Title);
-                    if (!string.IsNullOrWhiteSpace(normalized)) series.Add(normalized);
+                    if (string.IsNullOrWhiteSpace(normalized)) continue;
+                    HashSet<int> years;
+                    if (!series.TryGetValue(normalized, out years))
+                    {
+                        years = new HashSet<int>();
+                        series[normalized] = years;
+                    }
+                    if (item.FirstAirYear.HasValue) years.Add(item.FirstAirYear.Value);
                 }
                 else
                 {
                     movies.Add(item.TmdbId);
                 }
             }
-            return new SeerrMonitoredSnapshot(movies, series);
+            return Create(movies, series);
         }
     }
 
@@ -148,10 +196,38 @@ namespace Emby.Xtream.Plugin.Service
                     items.AddRange(watchlist);
                 }
 
+                // Request rows carry no title (measured on a live instance: only
+                // media.tmdbId), and a series matches by name. Look the name and first-air
+                // year up from Seerr's TMDB proxy once per distinct series ID; a row that
+                // still has no name is skipped rather than matched on nothing. Watchlist
+                // rows carry their title and skip this fetch (their year stays unknown).
+                var tvTitlesById = new Dictionary<int, SeerrWantedItem>();
+                foreach (var item in items)
+                {
+                    if (!item.IsSeries || !string.IsNullOrWhiteSpace(item.Title)) continue;
+                    SeerrWantedItem fetched;
+                    if (!tvTitlesById.TryGetValue(item.TmdbId, out fetched))
+                    {
+                        fetched = await _client.GetTvTitleAsync(url, apiKey, item.TmdbId, cancellationToken).ConfigureAwait(false);
+                        tvTitlesById[item.TmdbId] = fetched;
+                        if (fetched == null || string.IsNullOrWhiteSpace(fetched.Title))
+                        {
+                            _logger.Warn(
+                                "Seerr monitor: could not read the name of series tmdb {0} — it will not match this run",
+                                item.TmdbId);
+                        }
+                    }
+                    if (fetched != null)
+                    {
+                        item.Title = fetched.Title;
+                        item.FirstAirYear = fetched.FirstAirYear;
+                    }
+                }
+
                 var snapshot = SeerrMonitoredSnapshot.Build(items, normalizeSeriesName);
                 _logger.Info(
                     "Seerr monitor: watching {0} movie id(s) and {1} series name(s) — {2} request row(s) and {3} watchlist row(s) from {4} user(s)",
-                    snapshot.MovieTmdbIds.Count, snapshot.SeriesNames.Count,
+                    snapshot.MovieTmdbIds.Count, snapshot.SeriesNameCount,
                     requestCount, items.Count - requestCount, userIds.Count);
                 return snapshot;
             }

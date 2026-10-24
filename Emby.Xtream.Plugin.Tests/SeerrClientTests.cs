@@ -93,6 +93,44 @@ namespace Emby.Xtream.Plugin.Tests
             Assert.Empty(items);
         }
 
+        [Fact]
+        public async Task GetTvTitle_ReadsNameAndFirstAirYearFromTmdbProxy()
+        {
+            // Request rows carry no title, so a requested series is named and dated via
+            // the TMDB proxy endpoint — the year is what lets a "Name (2008)" provider
+            // title match without over-matching a remake.
+            Handler.RespondWith("/api/v1/tv/108978",
+                "{\"name\":\"Reacher\",\"originalName\":\"Reacher\",\"firstAirDate\":\"2022-02-03\"}");
+
+            var item = await MakeClient().GetTvTitleAsync(BaseUrl, ApiKey, 108978, None);
+
+            Assert.NotNull(item);
+            Assert.Equal("Reacher", item.Title);
+            Assert.Equal(2022, item.FirstAirYear);
+        }
+
+        [Fact]
+        public async Task GetTvTitle_WithoutFirstAirDate_LeavesYearUnknown()
+        {
+            Handler.RespondWith("/api/v1/tv/108978", "{\"name\":\"Reacher\"}");
+
+            var item = await MakeClient().GetTvTitleAsync(BaseUrl, ApiKey, 108978, None);
+
+            Assert.NotNull(item);
+            Assert.Equal("Reacher", item.Title);
+            Assert.Null(item.FirstAirYear);
+        }
+
+        [Fact]
+        public async Task GetTvTitle_Unreachable_YieldsNull()
+        {
+            Handler.RespondWith("/api/v1/tv/108978", "gone", HttpStatusCode.ServiceUnavailable);
+
+            var item = await MakeClient().GetTvTitleAsync(BaseUrl, ApiKey, 108978, None);
+
+            Assert.Null(item);
+        }
+
         // -----------------------------------------------------------------
         // Watchlist
         // -----------------------------------------------------------------

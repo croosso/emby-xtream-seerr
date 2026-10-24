@@ -247,6 +247,103 @@ namespace Emby.Xtream.Plugin.Tests
         }
 
         [Fact]
+        public async Task Series_RequestedWithoutTitle_NameFetchedFromTvEndpoint()
+        {
+            // Measured on a live Seerr: request rows carry only media.tmdbId, no title. A
+            // requested series must still match by name, so the monitor looks the name up
+            // from Seerr's TMDB proxy (ADR-C002).
+            var config = SeerrConfig();
+            Handler.RespondWith("/api/v1/user/1/watchlist", EmptyWatchlist);
+            Handler.RespondWith("/api/v1/request",
+                "{\"pageInfo\":{\"pages\":1,\"results\":1},\"results\":[" +
+                "{\"id\":1,\"status\":2,\"type\":\"tv\",\"media\":{\"mediaType\":\"tv\",\"tmdbId\":1234}}]}");
+            Handler.RespondWith("/api/v1/tv/1234", "{\"name\":\"Wanted Show\",\"firstAirDate\":\"2010-01-01\"}");
+            Handler.RespondWith("/api/v1/user",
+                "{\"pageInfo\":{\"pages\":1,\"results\":1},\"results\":[{\"id\":1}]}");
+            Handler.RespondWith("action=get_series_info&series_id=7", SeriesDetailJson(seriesId: 7));
+            Handler.RespondWith("action=get_series", SeriesListJson(
+                Series(seriesId: 7, name: "Wanted Show")));
+
+            var service = MakeSeerrService();
+            await service.SyncSeriesAsync(config, None, SaveConfig);
+
+            Assert.True(File.Exists(EpisodeStrmPath("Wanted Show", 1, 1)));
+            Assert.Contains(7, ParseIds(config.ReviewedSeriesIdsJson));
+        }
+
+        // -----------------------------------------------------------------
+        // Year-suffixed provider titles ("Name (2008)") — ADR-C002
+        // -----------------------------------------------------------------
+
+        [Fact]
+        public async Task Series_YearSuffixMatchingFirstAirYear_Synced()
+        {
+            // One provider tags titles with the first-air year: "Wanted Show (2010)". The
+            // suffix must match the watched series' first-air year (2010) for the write.
+            var config = SeerrConfig();
+            Handler.RespondWith("/api/v1/user/1/watchlist", EmptyWatchlist);
+            Handler.RespondWith("/api/v1/request",
+                "{\"pageInfo\":{\"pages\":1,\"results\":1},\"results\":[" +
+                "{\"id\":1,\"status\":2,\"type\":\"tv\",\"media\":{\"mediaType\":\"tv\",\"tmdbId\":1234}}]}");
+            Handler.RespondWith("/api/v1/tv/1234", "{\"name\":\"Wanted Show\",\"firstAirDate\":\"2010-03-01\"}");
+            Handler.RespondWith("/api/v1/user",
+                "{\"pageInfo\":{\"pages\":1,\"results\":1},\"results\":[{\"id\":1}]}");
+            Handler.RespondWith("action=get_series_info&series_id=7", SeriesDetailJson(seriesId: 7));
+            Handler.RespondWith("action=get_series", SeriesListJson(
+                Series(seriesId: 7, name: "Wanted Show (2010)")));
+
+            var service = MakeSeerrService();
+            await service.SyncSeriesAsync(config, None, SaveConfig);
+
+            // The folder keeps the provider's year suffix — same style as "VisionQuest (2026)".
+            Assert.True(File.Exists(EpisodeStrmPath("Wanted Show (2010)", 1, 1)));
+            Assert.Contains(7, ParseIds(config.ReviewedSeriesIdsJson));
+        }
+
+        [Fact]
+        public async Task Series_YearSuffixWithWrongYear_StillHeld()
+        {
+            // A same-named remake with a different first-air year must not over-match:
+            // the watched series aired 2010, the provider entry says 1988.
+            var config = SeerrConfig();
+            Handler.RespondWith("/api/v1/user/1/watchlist", EmptyWatchlist);
+            Handler.RespondWith("/api/v1/request",
+                "{\"pageInfo\":{\"pages\":1,\"results\":1},\"results\":[" +
+                "{\"id\":1,\"status\":2,\"type\":\"tv\",\"media\":{\"mediaType\":\"tv\",\"tmdbId\":1234}}]}");
+            Handler.RespondWith("/api/v1/tv/1234", "{\"name\":\"Wanted Show\",\"firstAirDate\":\"2010-03-01\"}");
+            Handler.RespondWith("/api/v1/user",
+                "{\"pageInfo\":{\"pages\":1,\"results\":1},\"results\":[{\"id\":1}]}");
+            Handler.RespondWith("action=get_series", SeriesListJson(
+                Series(seriesId: 7, name: "Wanted Show (1988)")));
+
+            var service = MakeSeerrService();
+            await service.SyncSeriesAsync(config, None, SaveConfig);
+
+            Assert.False(Directory.Exists(Path.Combine(TempDir.Path, "Shows", "Wanted Show (1988)")));
+            Assert.DoesNotContain(7, ParseIds(config.ReviewedSeriesIdsJson));
+        }
+
+        [Fact]
+        public async Task Series_YearSuffixWithoutKnownFirstAirYear_StillHeld()
+        {
+            // Watchlist rows carry a title but no first-air year: the year-suffix match is
+            // only trusted when the year is known, so a "Name (2010)" provider entry does
+            // not match a year-less watchlist row. It would still match an exact name.
+            var config = SeerrConfig();
+            Handler.RespondWith("/api/v1/user/1/watchlist", WatchlistJson((1234, "Wanted Show", "tv")));
+            Handler.RespondWith("/api/v1/request", EmptyRequests);
+            Handler.RespondWith("/api/v1/user",
+                "{\"pageInfo\":{\"pages\":1,\"results\":1},\"results\":[{\"id\":1}]}");
+            Handler.RespondWith("action=get_series", SeriesListJson(
+                Series(seriesId: 7, name: "Wanted Show (2010)")));
+
+            var service = MakeSeerrService();
+            await service.SyncSeriesAsync(config, None, SaveConfig);
+
+            Assert.False(Directory.Exists(Path.Combine(TempDir.Path, "Shows", "Wanted Show (2010)")));
+        }
+
+        [Fact]
         public async Task Series_MonitorOff_HeldNormally()
         {
             var config = SeerrConfig();

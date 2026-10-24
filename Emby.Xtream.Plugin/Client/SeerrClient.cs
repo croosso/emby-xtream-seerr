@@ -14,6 +14,13 @@ namespace Emby.Xtream.Plugin.Client
         public int TmdbId;
         public bool IsSeries;
         public string Title;
+
+        /// <summary>
+        /// The series' first-air year, from the TMDB proxy's <c>firstAirDate</c>. Null when
+        /// unknown (watchlist rows carry no dates, and a failed lookup has none) — the
+        /// year-suffix match is only trusted when this is known (ADR-C002).
+        /// </summary>
+        public int? FirstAirYear;
     }
 
     /// <summary>
@@ -147,6 +154,48 @@ namespace Emby.Xtream.Plugin.Client
                 }
             }
             return items;
+        }
+
+        /// <summary>
+        /// The series display name and first-air year from Seerr's TMDB proxy
+        /// (<c>/api/v1/tv/{id}</c>), for request rows — which carry only <c>media.tmdbId</c>
+        /// and no title — so a requested series can still be matched by name at the review
+        /// gate (ADR-C002). Returns null on any failure; the row is then skipped rather
+        /// than matched on nothing.
+        /// </summary>
+        public async Task<SeerrWantedItem> GetTvTitleAsync(
+            string baseUrl, string apiKey, int tmdbId, CancellationToken cancellationToken)
+        {
+            var url = CombineUrl(baseUrl, "/api/v1/tv/") + tmdbId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            using (var doc = await GetJsonAsync(url, apiKey, cancellationToken).ConfigureAwait(false))
+            {
+                if (doc == null) return null;
+                var root = doc.RootElement;
+                string name = null;
+                foreach (var field in new[] { "name", "title", "originalName" })
+                {
+                    if (TryGetString(root, field, out name) && !string.IsNullOrWhiteSpace(name))
+                    {
+                        break;
+                    }
+                    name = null;
+                }
+
+                var item = new SeerrWantedItem { TmdbId = tmdbId, IsSeries = true, Title = name };
+                string airDate;
+                if (TryGetString(root, "firstAirDate", out airDate))
+                {
+                    var match = System.Text.RegularExpressions.Regex.Match(airDate, @"\d{4}");
+                    int year;
+                    if (match.Success
+                        && int.TryParse(match.Value, System.Globalization.NumberStyles.None,
+                            System.Globalization.CultureInfo.InvariantCulture, out year))
+                    {
+                        item.FirstAirYear = year;
+                    }
+                }
+                return item;
+            }
         }
 
         private SeerrWantedItem ReadWantedRow(JsonElement row)

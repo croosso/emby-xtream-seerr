@@ -3589,12 +3589,14 @@ namespace Emby.Xtream.Plugin.Service
 
                             // A show the user asked for in Seerr (ADR-C002). Series list payloads
                             // carry no TMDB ID, so the match is on the name — the same sanitized
-                            // string computed for the provider's title above and for Seerr's
-                            // title when the snapshot was built. Same contract as the movie
-                            // gate's match: a match is a keep decision that proceeds to the
-                            // detail fetch and write, and the un-review tombstone above still
-                            // wins over a watchlist entry.
-                            var seerrMatch = seerrSnapshot.SeriesNames.Contains(seriesName);
+                            // string computed for the provider's title above and for Seerr's title
+                            // when the snapshot was built. A year-suffixed name ("Show (2008)")
+                            // matches when the suffix is the watched series' first-air year, so
+                            // both provider title formats are caught without over-matching a
+                            // same-named remake. Same contract as the movie gate's match: a match
+                            // is a keep decision that proceeds to the detail fetch and write, and
+                            // the un-review tombstone above still wins over a watchlist entry.
+                            var seerrMatch = seerrSnapshot.MatchesSeries(seriesName);
                             var onDisk = libraryFolderNames.Contains(seriesName)
                                 || storedHashes.ContainsKey(series.SeriesId.ToString(CultureInfo.InvariantCulture));
 

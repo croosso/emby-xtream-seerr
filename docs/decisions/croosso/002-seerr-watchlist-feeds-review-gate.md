@@ -85,6 +85,10 @@ the review gate treats a match as a keep decision.
   read from `media`/`mediaInfo`/top level, titles from `subject`/`name`/`title`,
   and pagination from either the `pageInfo` or the `page`/`totalPages` envelope,
   because Seerr's own API surface has already drifted between those shapes.
+  Request rows carry **no title** (measured on a live instance: only `media.tmdbId`),
+  so a requested series — which matches by name — has its name fetched from Seerr's
+  TMDB proxy (`/api/v1/tv/{id}`), once per distinct ID; a row that still yields no
+  name is skipped for that run with a warning rather than matched on nothing.
 - **`SeerrMonitor`** (`Service/SeerrMonitor.cs`) turns those rows into a snapshot:
   a TMDB-ID set for movies, and a *normalized-title* set for series (the series
   identity gap: a series is matched by the same cleaned, sanitized name the gate
@@ -99,10 +103,16 @@ the review gate treats a match as a keep decision.
   always wins over a Seerr match: withdrawal is the newer, more specific intent.
 - **Matching is bounded and free of extra HTTP against the provider.** Movies match
   on the provider-supplied `tmdb_id` only. Series match on the normalized folder
-  name only. Neither match performs a TMDB fallback lookup; a title without an ID
-  simply stays held. Name collisions are possible for series (a remake with the
-  same title); every match is logged so a wrong auto-review is visible, and the
-  ADR-F008 un-review path removes the result.
+  name only — with one extension for the two title formats providers use for the
+  same series: a language prefix (`EN| Name`, stripped by the cleaning pipeline)
+  and a first-air-year suffix (`Name (2008)`, kept by it). The snapshot carries the
+  watched series' first-air year from the TMDB proxy, and a year-suffixed provider
+  name matches only when the suffix equals that year — a same-named remake with a
+  different year stays held. A watched series with no known year (a watchlist row,
+  or a failed proxy lookup) matches its exact name only. Neither match performs a
+  TMDB fallback lookup; a title without an ID simply stays held. Name collisions
+  remain possible for exact-name remakes; every match is logged so a wrong
+  auto-review is visible, and the ADR-F008 un-review path removes the result.
 - **The monitor only runs when the review gate is on.** With the gate off nothing
   is held, so there is nothing to exempt; requiring the gate bounds both the poll
   cost and the surface. A failed poll (Seerr down, bad key) logs one warning and
