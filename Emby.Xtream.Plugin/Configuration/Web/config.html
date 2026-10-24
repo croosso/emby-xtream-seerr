@@ -554,6 +554,38 @@
 
                     <div class="checkboxContainer checkboxContainer-withDescription" style="margin-top:0.5em;">
                         <label>
+                            <input class="chkEnableSeerrMonitor" type="checkbox" is="emby-checkbox" />
+                            <span>Treat titles requested or watchlisted in Seerr as reviewed</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">
+                            Connects to a <a href="https://github.com/seerr-team/seerr" target="_blank" rel="noopener" style="color:#52B54B;">Seerr</a>
+                            server (leave it unconnected to Radarr/Sonarr so nothing downloads) and, on each sync,
+                            lets a title you requested or watchlisted there through the review gate above —
+                            so a movie or show reaches your library on the first sync after your IPTV provider
+                            carries it. Requires "Only sync movies and series you have reviewed" above.
+                        </div>
+                    </div>
+                    <div class="seerrSettings">
+                        <div class="inputContainer">
+                            <input class="txtSeerrUrl" type="text" is="emby-input"
+                                label="Seerr URL" />
+                            <div class="fieldDescription">
+                                Base URL of your Seerr server, e.g. https://seerr.example.com
+                            </div>
+                        </div>
+                        <div class="inputContainer">
+                            <input class="txtSeerrApiKey" type="password" is="emby-input"
+                                label="Seerr API Key" />
+                            <div class="fieldDescription">
+                                Settings &rarr; API Key in Seerr. Grant the key's account the admin role so it
+                                can read every user's watchlist. Stored with the plugin configuration and never
+                                logged.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription" style="margin-top:0.5em;">
+                        <label>
                             <input class="chkEnableNfoFiles" type="checkbox" is="emby-checkbox" />
                             <span>Write NFO metadata files (.nfo)</span>
                         </label>

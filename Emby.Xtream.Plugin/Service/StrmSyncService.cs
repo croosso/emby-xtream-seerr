@@ -2652,6 +2652,22 @@ namespace Emby.Xtream.Plugin.Service
                 // owns, so the cost is a pointer and a string reference per title.
                 var wantedMovies = new List<Tuple<VodStreamInfo, string>>();
 
+                // Seerr watchlist monitor (ADR-C002): the set of titles the user asked for,
+                // pulled at sync time — not a webhook, which cannot authenticate to an
+                // admin-only route. Polled only when the gate is on: with the gate off
+                // nothing is held, so there is nothing to exempt. A failed poll inside
+                // GetSnapshotAsync stands the monitor down for this run; the gate then holds
+                // everything, which is its pre-existing behavior.
+                var seerrSnapshot = reviewGateOn
+                    ? await SeerrMonitorService.GetSnapshotAsync(
+                        config, SeerrSeriesNameNormalizer(config), cancellationToken).ConfigureAwait(false)
+                    : SeerrMonitoredSnapshot.Empty;
+
+                // Seerr matches this run, in the same shape as autoReviewed so the fold can
+                // consume them together. Kept separate so the log line about matches says
+                // what actually matched, not the on-disk exemption's wording.
+                var seerrMatchedMovies = new List<Tuple<int, string>>();
+
                 var semaphore = new SemaphoreSlim(ResolveSyncParallelism(config));
 
                 // Counted at the write: Completed minus Skipped counted failures as writes.
@@ -2719,13 +2735,24 @@ namespace Emby.Xtream.Plugin.Service
                                 return;
                             }
 
-                            int providerTmdb;
-                            var hasTmdb = IsValidTmdbId(movie.TmdbId)
-                                && int.TryParse(movie.TmdbId.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out providerTmdb)
-                                && libraryTmdbIds.Contains(providerTmdb);
-                            var onDisk = hasTmdb || libraryFolderNames.Contains(movieName);
+                            int providerTmdb = 0;
+                            var hasProviderTmdb = IsValidTmdbId(movie.TmdbId)
+                                && int.TryParse(movie.TmdbId.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out providerTmdb);
+                            var onDisk = (hasProviderTmdb && libraryTmdbIds.Contains(providerTmdb))
+                                || libraryFolderNames.Contains(movieName);
 
-                            if (!onDiskExemptionOn || !onDisk)
+                            // A title the user asked for in Seerr (ADR-C002). Matched on the
+                            // provider-supplied TMDB ID only — a held title still costs no
+                            // TMDB fallback lookup, so a provider that does not populate
+                            // tmdb_id simply keeps holding the title. A match is a keep
+                            // decision: it falls through to the write and is folded into the
+                            // reviewed checkpoint with the on-disk exemptions below. The
+                            // un-review tombstone above still wins: withdrawing a keep
+                            // decision is the newer, more specific intent than a watchlist
+                            // entry.
+                            var seerrMatch = hasProviderTmdb && seerrSnapshot.MovieTmdbIds.Contains(providerTmdb);
+
+                            if (!seerrMatch && (!onDiskExemptionOn || !onDisk))
                             {
                                 Interlocked.Increment(ref heldForReview);
                                 lock (heldTitles)
@@ -2739,6 +2766,10 @@ namespace Emby.Xtream.Plugin.Service
                             }
 
                             lock (autoReviewed) { autoReviewed.Add(Tuple.Create(movie.StreamId, cleanedName)); }
+                            if (seerrMatch)
+                            {
+                                lock (seerrMatchedMovies) { seerrMatchedMovies.Add(Tuple.Create(movie.StreamId, cleanedName)); }
+                            }
                         }
                         var outcome = await WriteMovieAsync(movie, writeContext, write, cancellationToken).ConfigureAwait(false);
                         if (outcome == MovieWriteOutcome.InvalidName)
@@ -2805,14 +2836,19 @@ namespace Emby.Xtream.Plugin.Service
                     // Fold the exempted re-additions into the checkpoint, so a title the user
                     // already keeps stays recognised under its new id without them re-reviewing
                     // it. Only ever adds; the gate never marks anything un-reviewed.
-                    if (autoReviewed.Count > 0)
+                    if (autoReviewed.Count > 0 || seerrMatchedMovies.Count > 0)
                     {
                         // Merged into the CURRENT checkpoint through the store rather than
                         // serialized over it, so a decision recorded while the sync ran (a
                         // dashboard save, a future approval webhook) survives the fold (ADR-C001).
-                        GetDecisionStore(config).AddReviewed(config, false, autoReviewed.Select(e => e.Item1));
+                        GetDecisionStore(config).AddReviewed(config, false,
+                            autoReviewed.Select(e => e.Item1)
+                                .Concat(seerrMatchedMovies.Select(e => e.Item1)));
                         saveConfig?.Invoke();
+                    }
 
+                    if (autoReviewed.Count > 0)
+                    {
                         var restored = autoReviewed
                             .Select(e => e.Item2)
                             .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
@@ -2823,6 +2859,20 @@ namespace Emby.Xtream.Plugin.Service
                             autoReviewed.Count,
                             string.Join(", ", restored),
                             autoReviewed.Count > restored.Count ? ", ..." : string.Empty);
+                    }
+
+                    if (seerrMatchedMovies.Count > 0)
+                    {
+                        var asked = seerrMatchedMovies
+                            .Select(e => e.Item2)
+                            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+                            .Take(HeldSampleSize)
+                            .ToList();
+                        _logger.Info(
+                            "Seerr monitor: {0} title(s) you asked for appeared in the catalogue — synced and marked reviewed: {1}{2}",
+                            seerrMatchedMovies.Count,
+                            string.Join(", ", asked),
+                            seerrMatchedMovies.Count > asked.Count ? ", ..." : string.Empty);
                     }
 
                     if (heldForReview > 0)
@@ -3396,6 +3446,20 @@ namespace Emby.Xtream.Plugin.Service
                 var heldIds = new HashSet<int>();
                 const int HeldSampleSize = 15;
 
+                // Seerr watchlist monitor (ADR-C002) — series half. The snapshot caches for a
+                // short TTL, so a movie and series sync that run back to back poll Seerr once.
+                // Series match by normalized name here because the list payload carries no
+                // TMDB ID; the names in the snapshot went through the same clean-and-sanitize
+                // pipeline this gate applies to provider titles.
+                var seerrSnapshot = reviewGateOn
+                    ? await SeerrMonitorService.GetSnapshotAsync(
+                        config, SeerrSeriesNameNormalizer(config), cancellationToken).ConfigureAwait(false)
+                    : SeerrMonitoredSnapshot.Empty;
+
+                // Seerr matches this run, in autoReviewed's shape for the same reason as the
+                // movie side's list.
+                var seerrMatchedSeries = new List<Tuple<int, string>>();
+
                 var writtenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var semaphore = new SemaphoreSlim(ResolveSyncParallelism(config));
 
@@ -3523,10 +3587,18 @@ namespace Emby.Xtream.Plugin.Service
                                 return;
                             }
 
+                            // A show the user asked for in Seerr (ADR-C002). Series list payloads
+                            // carry no TMDB ID, so the match is on the name — the same sanitized
+                            // string computed for the provider's title above and for Seerr's
+                            // title when the snapshot was built. Same contract as the movie
+                            // gate's match: a match is a keep decision that proceeds to the
+                            // detail fetch and write, and the un-review tombstone above still
+                            // wins over a watchlist entry.
+                            var seerrMatch = seerrSnapshot.SeriesNames.Contains(seriesName);
                             var onDisk = libraryFolderNames.Contains(seriesName)
                                 || storedHashes.ContainsKey(series.SeriesId.ToString(CultureInfo.InvariantCulture));
 
-                            if (!onDiskExemptionOn || !onDisk)
+                            if (!seerrMatch && (!onDiskExemptionOn || !onDisk))
                             {
                                 Interlocked.Increment(ref heldForReview);
                                 lock (heldTitles)
@@ -3541,6 +3613,10 @@ namespace Emby.Xtream.Plugin.Service
                             }
 
                             lock (autoReviewed) { autoReviewed.Add(Tuple.Create(series.SeriesId, cleanedName)); }
+                            if (seerrMatch)
+                            {
+                                lock (seerrMatchedSeries) { seerrMatchedSeries.Add(Tuple.Create(series.SeriesId, cleanedName)); }
+                            }
                         }
 
                         var isForcedSeries = forcedSeriesIds.Contains(series.SeriesId);
@@ -3871,12 +3947,17 @@ namespace Emby.Xtream.Plugin.Service
                     // Additive only, as on the movie side: the gate never marks anything
                     // un-reviewed, so folding in the shows it recognised lets the checkpoint
                     // heal itself as the provider reshuffles ids.
-                    if (autoReviewed.Count > 0)
+                    if (autoReviewed.Count > 0 || seerrMatchedSeries.Count > 0)
                     {
                         // Same merge-not-overwrite contract as the movie fold above (ADR-C001).
-                        GetDecisionStore(config).AddReviewed(config, true, autoReviewed.Select(e => e.Item1));
+                        GetDecisionStore(config).AddReviewed(config, true,
+                            autoReviewed.Select(e => e.Item1)
+                                .Concat(seerrMatchedSeries.Select(e => e.Item1)));
                         saveConfig?.Invoke();
+                    }
 
+                    if (autoReviewed.Count > 0)
+                    {
                         var restored = autoReviewed
                             .Select(e => e.Item2)
                             .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
@@ -3887,6 +3968,20 @@ namespace Emby.Xtream.Plugin.Service
                             autoReviewed.Count,
                             string.Join(", ", restored),
                             autoReviewed.Count > restored.Count ? ", ..." : string.Empty);
+                    }
+
+                    if (seerrMatchedSeries.Count > 0)
+                    {
+                        var asked = seerrMatchedSeries
+                            .Select(e => e.Item2)
+                            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+                            .Take(HeldSampleSize)
+                            .ToList();
+                        _logger.Info(
+                            "Seerr monitor: {0} show(s) you asked for appeared in the catalogue — synced and marked reviewed: {1}{2}",
+                            seerrMatchedSeries.Count,
+                            string.Join(", ", asked),
+                            seerrMatchedSeries.Count > asked.Count ? ", ..." : string.Empty);
                     }
 
                     if (heldForReview > 0)
@@ -4111,6 +4206,42 @@ namespace Emby.Xtream.Plugin.Service
 
         /// <summary>Handler for the Dispatcharr VOD client; null uses the real network. For tests.</summary>
         internal System.Net.Http.HttpMessageHandler DispatcharrHandler { get; set; }
+
+        /// <summary>Handler for the Seerr client; null uses the real network. For tests.</summary>
+        internal System.Net.Http.HttpMessageHandler SeerrHandler { get; set; }
+
+        private SeerrMonitor _seerrMonitor;
+
+        /// <summary>
+        /// The Seerr watchlist monitor (ADR-C002), created lazily so tests can set
+        /// <see cref="SeerrHandler"/> after construction.
+        /// </summary>
+        private SeerrMonitor SeerrMonitorService
+        {
+            get
+            {
+                if (_seerrMonitor == null)
+                {
+                    _seerrMonitor = new SeerrMonitor(
+                        _logger, new Emby.Xtream.Plugin.Client.SeerrClient(_logger, SeerrHandler));
+                }
+                return _seerrMonitor;
+            }
+        }
+
+        /// <summary>
+        /// The name pipeline a Seerr series title goes through so it matches this sync's
+        /// series names (ADR-C002): exactly the cleaning and sanitizing a provider title
+        /// gets in the review gate — <see cref="ContentNameCleaner.CleanContentName"/> when
+        /// name cleaning is on, then <see cref="SanitizeFileName"/>.
+        /// </summary>
+        private static Func<string, string> SeerrSeriesNameNormalizer(PluginConfiguration config)
+        {
+            return title => SanitizeFileName(
+                config.EnableContentNameCleaning
+                    ? ContentNameCleaner.CleanContentName(title, config.ContentRemoveTerms)
+                    : title);
+        }
 
         /// <summary>The Dispatcharr client the movie writer asks for extra versions, or null without Dispatcharr.</summary>
         private Emby.Xtream.Plugin.Client.DispatcharrClient CreateDispatcharrVodClient(PluginConfiguration config)

@@ -296,5 +296,19 @@ namespace Emby.Xtream.Plugin.Tests
 
             Assert.Equal(line, LogSanitizer.SanitizeLine(line, null, null, null, null));
         }
+
+        [Fact]
+        public void SeerrApiKey_IsRedactedFromSanitizedLogs()
+        {
+            // Seerr keys are base64-shaped (dots, equals signs), so none of the token-shaped
+            // rules catch them; only the credential pass can.
+            var key = "MTc5Mjg2Mzk3NDYwNTkwODVlMTgzLWQxNTUtNDZjNy1iOWU5LTM5ZDI0OWYyMTI5MA==";
+
+            var result = LogSanitizer.SanitizeLine(
+                "Seerr poll failed with key " + key, null, null, null, null, key);
+
+            Assert.DoesNotContain(key, result);
+            Assert.Contains("key <redacted>", result);
+        }
     }
 }
