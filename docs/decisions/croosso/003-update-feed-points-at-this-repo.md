@@ -79,8 +79,9 @@ that describes someone else's feature and someone else's release sequence.
   project publishes a genuinely newer release, with the button then installing this
   project's build — the trap is gone, not hidden.
 - **Merge hazard**: upstream merges touching `UpdateChecker.cs` will conflict on, or
-  silently revert, the feed constants. Take this repo's side — the conflict is the
-  ADR asserting itself.
+  silently revert, the feed constants, and merges touching `.github/workflows/release.yml`
+  will do the same to its `seerr-v*` tag trigger and prefix stripping. Take this repo's
+  side — the conflict is the ADR asserting itself.
 - Publishing a release now carries the release-notes obligations in AGENTS.md
   (reporter credits, user-facing wording) and must include an
   `Emby.Xtream.Plugin.dll` asset built from the tagged commit, or the button will

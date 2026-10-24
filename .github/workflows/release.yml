@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'dedupe-v*'
+      - 'seerr-v*'
 
 permissions:
   contents: write
@@ -16,9 +16,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           # Full history + tags: the release-notes step below resolves the previous
-          # dedupe-v tag and logs the commit range since it. The default shallow
-          # checkout has neither, so PREV_TAG comes back empty and the notes
-          # collapse to just the tagged commit.
+          # tag and logs the commit range since it. The default shallow checkout has
+          # neither, so PREV_TAG comes back empty and the notes collapse to just the
+          # tagged commit.
           fetch-depth: 0
 
       - name: Setup .NET
@@ -31,7 +31,7 @@ jobs:
       # One DLL for Emby 4.9 and 4.10, compiled against the 4.9 SDK (ADR-017).
       - name: Build plugin
         run: |
-          VERSION=${GITHUB_REF_NAME#dedupe-v}
+          VERSION=${GITHUB_REF_NAME#seerr-v}
           dotnet publish Emby.Xtream.Plugin/Emby.Xtream.Plugin.csproj \
             -c Release -o out --no-self-contained -p:Version=$VERSION
 
@@ -49,8 +49,13 @@ jobs:
       - name: Generate release notes
         id: notes
         run: |
-          # Find previous tag
-          PREV_TAG=$(git tag --sort=-v:refname | grep '^dedupe-v' | sed -n '2p')
+          # Find previous tag. This project's own sequence is seerr-vX.Y.Z; the parent
+          # fork's dedupe-vX.Y.Z tags are still in the history and count as ancestors, so
+          # the first seerr release ranges from the last dedupe tag and its notes include
+          # everything this project has changed since. The current ref is excluded by name
+          # rather than by position: the newest tag IS this release, and a version sort
+          # across the two prefixes does not promise which one lands first.
+          PREV_TAG=$(git tag --sort=-v:refname | grep -E '^(seerr|dedupe)-v' | grep -v "^${GITHUB_REF_NAME}$" | head -1)
           if [ -z "$PREV_TAG" ]; then
             RANGE="HEAD"
           else
@@ -93,7 +98,7 @@ jobs:
           #
           # Matched with index()==1 rather than a regex: the version contains dots, which a regex
           # would treat as wildcards.
-          VERSION=${GITHUB_REF_NAME#dedupe-v}
+          VERSION=${GITHUB_REF_NAME#seerr-v}
           SUMMARY=$(awk -v ver="$VERSION" '
             index($0, "## [" ver "]") == 1 { inside = 1; next }
             inside && index($0, "## [") == 1 { exit }

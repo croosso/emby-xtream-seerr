@@ -23,7 +23,36 @@ starting at 1.0.0 — independent of upstream
   edited by hand while the plugin is stopped no longer takes effect. The id-churn repair
   script prints the extra move-aside step when that matters.
 
+- **What you ask for in Seerr now decides what syncs (ADR-C002).** With "Only sync movies
+  and series you have reviewed" on, new arrivals used to wait in the de-dup view until
+  you reviewed them by hand — which means triaging a catalogue of tens of thousands of
+  titles. Connect a [Seerr](https://github.com/seerr-team/seerr) server instead
+  (*Plugin Config → STRM Sync Settings → Treat titles requested or watchlisted in Seerr
+  as reviewed*), leave it **unconnected to Radarr/Sonarr** so a request means "I want to
+  watch this" rather than "download this", and every sync pulls your requests and every
+  user's watchlist from it: a title you asked for syncs into the library on the first
+  run after your IPTV provider carries it, and is marked reviewed so it stays. Movies
+  are matched by the provider's TMDB ID; series, which providers list without one, by
+  title — including titles tagged with their first year (`Breaking Bad (2008)`, which
+  matches the year Seerr reports, so a same-named remake from another year is not
+  picked up). The plugin asks Seerr at sync time and exposes no webhook, so nothing new
+  needs to reach your Emby server from outside. Un-reviewing a title still wins over a
+  Seerr match, and every match is named in the log.
+
+  Seerr keeps its API key in the plugin configuration; it is never logged and is
+  redacted from the sanitized log download. Everything about the design is in
+  [docs/architecture/seerr-review-gate.md](docs/architecture/seerr-review-gate.md).
+
 ### Fixed
+
+- **The dashboard's update banner no longer advertises another fork's releases
+  (ADR-C003).** The banner permanently said "v1.9.0 is available (you have v0.0.0.0)"
+  and its *Update Now* button would have replaced this plugin with the de-duplication
+  fork's build — silently removing everything this project adds. The update check now
+  reads this project's own releases (this repo has been renamed
+  **emby-xtream-seerr**, with its own `seerr-vX.Y.Z` version numbers starting at
+  1.10.0), so nothing shows until a genuinely newer build of *this* project is
+  published, and the button then installs this project's DLL.
 
 - **Un-reviewing a movie now sticks (ADR-F008).** Marking a title "unreviewed" and saving looked
   like it worked — until the next sync quietly re-marked it reviewed, because the sync treated
