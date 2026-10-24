@@ -33,8 +33,12 @@ namespace Emby.Xtream.Plugin.Service
 
     public static class UpdateChecker
     {
-        private const string GitHubApiUrl = "https://api.github.com/repos/andyj682/emby-xtream-dedupe/releases/latest";
-        private const string GitHubAllReleasesUrl = "https://api.github.com/repos/andyj682/emby-xtream-dedupe/releases";
+        // This repo's own release feed (ADR-C003). Release tags are "dedupe-vX.Y.Z" —
+        // CompareVersions strips that prefix, so the version comparison is against this
+        // fork's own sequence, which tracks upstream's numbers with a prefix to avoid
+        // silently claiming a number that means something else there.
+        private const string GitHubApiUrl = "https://api.github.com/repos/croosso/emby-xtream-dedupe/releases/latest";
+        private const string GitHubAllReleasesUrl = "https://api.github.com/repos/croosso/emby-xtream-dedupe/releases";
         /// <summary>Release asset built against the Emby 4.9 SDK.</summary>
         internal const string DllAssetName = "Emby.Xtream.Plugin.dll";
 
