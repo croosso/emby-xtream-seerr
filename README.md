@@ -16,6 +16,16 @@
 
 ---
 
+> **Inspired by de-duplication, but about selection.** This project inherits the
+> de-duplicated review workflow from
+> [andyj682/emby-xtream-dedupe](https://github.com/andyj682/emby-xtream-dedupe), and then
+> answers the question that workflow leaves open: instead of triaging a 25,000-title
+> catalogue by hand, you simply request what you want in
+> [Seerr](https://github.com/seerr-team/seerr) — and it reaches your library on the first
+> sync after your IPTV provider carries it. That is the feature this project exists for;
+> how it works (and why it pulls from Seerr at sync time instead of receiving events) is
+> explained in [docs/architecture/seerr-review-gate.md](docs/architecture/seerr-review-gate.md).
+
 > **This is a fork of [firestaerter3/emby-xtream](https://github.com/firestaerter3/emby-xtream).**
 > It tracks upstream, adding a companion interface that de-duplicates titles across categories
 > and tracks reviewed/unreviewed items to make processing large VOD libraries more efficient.
