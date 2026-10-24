@@ -1,5 +1,9 @@
 name: CI
 
+# 2026-10-24: file touched to force GitHub to register this workflow's push trigger.
+# This repository was created as a fork and inherited its workflow files; in that state
+# workflows are listed and can be dispatched, but their push triggers never fire.
+
 on:
   workflow_dispatch:
   pull_request:
