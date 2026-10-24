@@ -7,8 +7,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Read the setup guide
-    url: https://github.com/andyj682/emby-xtream-dedupe#installation
+    url: https://github.com/croosso/emby-xtream-seerr#installation
     about: Check installation and configuration steps before opening an issue.
   - name: Questions and general discussion
-    url: https://github.com/andyj682/emby-xtream-dedupe/discussions
+    url: https://github.com/croosso/emby-xtream-seerr/discussions
     about: Not sure whether it's a bug? Ask here rather than opening an issue.

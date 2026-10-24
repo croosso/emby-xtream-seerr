@@ -113,9 +113,10 @@ stating plainly before you rely on this one.
   — learns which VOD series a client syncs, then once a day refreshes all of each watched show's
   provider and category relations, so new episodes stop going missing. Scoped to only the series
   you sync; runs in the background.
-- **emby-xtream-dedupe** *(this repo)* — generates `.strm` files for Emby from a Dispatcharr
+- **emby-xtream-seerr** *(this repo)* — generates `.strm` files for Emby from a Dispatcharr
   catalog, de-duplicating titles cross-listed across categories and holding new arrivals for
-  review before they reach your library.
+  review before they reach your library. Your Seerr requests and watchlists feed that review
+  gate, so a title you asked for arrives on the first sync after your provider carries it.
 
 ### A `.strm` generator alone will not keep your episodes up to date
 
@@ -233,8 +234,8 @@ fork's 1.9.0 the same file works on Emby Server 4.9 and 4.10.
 Requires the .NET 10 SDK (the test project targets .NET 10):
 
 ```bash
-git clone https://github.com/andyj682/emby-xtream-dedupe.git
-cd emby-xtream-dedupe
+git clone https://github.com/croosso/emby-xtream-seerr.git
+cd emby-xtream-seerr
 bash build-dedupe.sh
 ```
 

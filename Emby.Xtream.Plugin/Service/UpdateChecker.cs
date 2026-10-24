@@ -33,12 +33,13 @@ namespace Emby.Xtream.Plugin.Service
 
     public static class UpdateChecker
     {
-        // This repo's own release feed (ADR-C003). Release tags are "dedupe-vX.Y.Z" —
+        // This repo's own release feed (ADR-C003). Release tags are "seerr-vX.Y.Z" —
         // CompareVersions strips that prefix, so the version comparison is against this
-        // fork's own sequence, which tracks upstream's numbers with a prefix to avoid
-        // silently claiming a number that means something else there.
-        private const string GitHubApiUrl = "https://api.github.com/repos/croosso/emby-xtream-dedupe/releases/latest";
-        private const string GitHubAllReleasesUrl = "https://api.github.com/repos/croosso/emby-xtream-dedupe/releases";
+        // project's own sequence, which started at seerr-v1.10.0 (the state of
+        // andyj682/emby-xtream-dedupe v1.9.0 plus Seerr-driven selection; the +0.1 honors
+        // that this fork's first version was one feature past its parent).
+        private const string GitHubApiUrl = "https://api.github.com/repos/croosso/emby-xtream-seerr/releases/latest";
+        private const string GitHubAllReleasesUrl = "https://api.github.com/repos/croosso/emby-xtream-seerr/releases";
         /// <summary>Release asset built against the Emby 4.9 SDK.</summary>
         internal const string DllAssetName = "Emby.Xtream.Plugin.dll";
 
@@ -256,11 +257,19 @@ namespace Emby.Xtream.Plugin.Service
                 return result;
             }
 
-            // Fork release tags are prefixed "dedupe-v" (e.g. dedupe-v1.1.0); strip that, tolerating
-            // a bare "v" too (the legacy v1.0.0 release).
+            // Release tags are prefixed "seerr-v" (this project's own sequence, starting
+            // seerr-v1.10.0); strip that, tolerating the parents' prefixes too — "dedupe-v"
+            // (andyj682/emby-xtream-dedupe) and a bare "v" (the original firestaerter3
+            // legacy v1.0.0) — so a historical tag still parses.
             var versionStr = tagName;
-            if (versionStr.StartsWith("dedupe-", StringComparison.OrdinalIgnoreCase))
-                versionStr = versionStr.Substring("dedupe-".Length);
+            foreach (var prefix in new[] { "seerr-", "dedupe-" })
+            {
+                if (versionStr.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    versionStr = versionStr.Substring(prefix.Length);
+                    break;
+                }
+            }
             versionStr = versionStr.TrimStart('v', 'V');
             result.LatestVersion = versionStr;
 

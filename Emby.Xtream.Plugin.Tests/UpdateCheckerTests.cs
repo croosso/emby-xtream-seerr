@@ -419,5 +419,41 @@ namespace Emby.Xtream.Plugin.Tests
             var json = @"{""tag_name"": ""v1.0.0""}";
             Assert.False(UpdateChecker.ExtractJsonBool(json, "prerelease"));
         }
+
+        // -----------------------------------------------------------------
+        // This project's own tag scheme (ADR-C003): seerr-vX.Y.Z, starting at
+        // seerr-v1.10.0. The parents' prefixes must keep parsing too.
+        // -----------------------------------------------------------------
+
+        [Fact]
+        public void SeerrTagPrefix_StrippedForComparison()
+        {
+            var result = UpdateChecker.CompareVersions("1.10.0", "seerr-v1.11.0", "", "", "");
+
+            Assert.True(result.UpdateAvailable);
+            Assert.Equal("1.11.0", result.LatestVersion);
+        }
+
+        [Fact]
+        public void SeerrTagSameVersion_NoUpdate()
+        {
+            // The first release of the seerr sequence installs as assembly 1.10.0; its own
+            // tag must not advertise itself.
+            var result = UpdateChecker.CompareVersions("1.10.0", "seerr-v1.10.0", "", "", "");
+
+            Assert.False(result.UpdateAvailable);
+            Assert.Equal("1.10.0", result.LatestVersion);
+        }
+
+        [Fact]
+        public void LegacyDedupeTagPrefix_StillParses()
+        {
+            // Historical tags from the parent fork remain readable, so a hypothetical old
+            // release in a migrated repository does not break the check.
+            var result = UpdateChecker.CompareVersions("1.10.0", "dedupe-v1.9.0", "", "", "");
+
+            Assert.False(result.UpdateAvailable);
+            Assert.Equal("1.9.0", result.LatestVersion);
+        }
     }
 }
