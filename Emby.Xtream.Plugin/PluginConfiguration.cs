@@ -83,6 +83,26 @@ namespace Emby.Xtream.Plugin
         public int[] SelectedDispatcharrProfileIds { get; set; } = new int[0];
         public string CachedDispatcharrProfiles { get; set; } = string.Empty;
 
+        // Seerr watchlist monitor
+        /// <summary>
+        /// Pull the Seerr instance's requests and user watchlists at sync time and treat a
+        /// matching held title as reviewed, so a title requested in Seerr reaches the library
+        /// on the first sync after the provider carries it. Only active while
+        /// <see cref="RequireReviewBeforeSync"/> is on — with the gate off nothing is held,
+        /// so there is nothing to exempt. See ADR-C002.
+        /// </summary>
+        public bool EnableSeerrMonitor { get; set; }
+
+        /// <summary>Base URL of the Seerr server, e.g. <c>https://seerr.example.com</c>.</summary>
+        public string SeerrUrl { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Seerr API key (Settings → API Key in Seerr). Stored like the other credentials,
+        /// never logged, and redacted from the sanitized log download. Grant Seerr's
+        /// <c>admin</c> local account role so the key can read all users' watchlists.
+        /// </summary>
+        public string SeerrApiKey { get; set; } = string.Empty;
+
         // VOD Movies
         public bool SyncMovies { get; set; }
         public string StrmLibraryPath { get; set; } = "/config/xtream";

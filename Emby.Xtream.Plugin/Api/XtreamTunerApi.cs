@@ -1637,7 +1637,8 @@ namespace Emby.Xtream.Plugin.Api
                 // is about to attach to a bug report.
                 var s = LogSanitizer.SanitizeLine(line,
                     config.Username, config.Password,
-                    config.DispatcharrUser, config.DispatcharrPass);
+                    config.DispatcharrUser, config.DispatcharrPass,
+                    config.SeerrApiKey);
                 sanitized.AppendLine(s);
             }
 

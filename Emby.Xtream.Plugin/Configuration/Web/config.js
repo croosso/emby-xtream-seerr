@@ -86,6 +86,10 @@ function (BaseView, loading) {
             updateDispatcharrVisibility(view);
         });
 
+        view.querySelector('.chkEnableSeerrMonitor').addEventListener('change', function () {
+            updateSeerrVisibility(view);
+        });
+
         view.querySelector('.chkEnableLiveTv').addEventListener('change', function () {
             updateLiveTvVisibility(view);
         });
@@ -708,6 +712,9 @@ function (BaseView, loading) {
             view.querySelector('.chkRefreshEmbyLibraryAfterSync').checked = config.RefreshEmbyLibraryAfterSync !== false;
             // Opt-in, so default OFF — note the !== false idiom above is for on-by-default flags.
             view.querySelector('.chkRequireReviewBeforeSync').checked = !!config.RequireReviewBeforeSync;
+            view.querySelector('.chkEnableSeerrMonitor').checked = !!config.EnableSeerrMonitor;
+            view.querySelector('.txtSeerrUrl').value = config.SeerrUrl || '';
+            view.querySelector('.txtSeerrApiKey').value = config.SeerrApiKey || '';
             view.querySelector('.txtSyncParallelism').value = config.SyncParallelism || 3;
             view.querySelector('.txtXtreamRequestsPerSecond').value = config.XtreamRequestsPerSecond || 0;
             view.querySelector('.chkCleanupOrphans').checked = !!config.CleanupOrphans;
@@ -738,6 +745,7 @@ function (BaseView, loading) {
             updateTmdbVisibility(view);
             updateNameCleaningVisibility(view);
             updateDispatcharrVisibility(view);
+            updateSeerrVisibility(view);
             updateEpgVisibility(view);
             updateLiveTvVisibility(view);
             updateVodMovieVisibility(view);
@@ -850,6 +858,12 @@ function (BaseView, loading) {
             config.SmartSkipExisting = view.querySelector('.chkSmartSkipExisting').checked;
             config.RefreshEmbyLibraryAfterSync = view.querySelector('.chkRefreshEmbyLibraryAfterSync').checked;
             config.RequireReviewBeforeSync = view.querySelector('.chkRequireReviewBeforeSync').checked;
+            config.EnableSeerrMonitor = view.querySelector('.chkEnableSeerrMonitor').checked;
+            config.SeerrUrl = view.querySelector('.txtSeerrUrl').value.replace(/\/+$/, '');
+            // Only written when typed, matching the Dispatcharr password: an empty box on
+            // load means "unchanged", so a casual save cannot wipe the key.
+            var _seerrKeyValue = view.querySelector('.txtSeerrApiKey').value;
+            if (_seerrKeyValue) config.SeerrApiKey = _seerrKeyValue;
             config.SyncParallelism = parseInt(view.querySelector('.txtSyncParallelism').value, 10) || 3;
             config.XtreamRequestsPerSecond = parseInt(view.querySelector('.txtXtreamRequestsPerSecond').value, 10) || 0;
             config.CleanupOrphans = view.querySelector('.chkCleanupOrphans').checked;
@@ -949,6 +963,14 @@ function (BaseView, loading) {
         });
         var hint = view.querySelector('.dispatcharrOffHint');
         if (hint) hint.style.display = enabled ? 'none' : '';
+    }
+
+    // Seerr's own settings — only meaningful with the monitor checkbox on, and only
+    // consulted by the review gate, so they hide without it.
+    function updateSeerrVisibility(view) {
+        var enabled = view.querySelector('.chkEnableSeerrMonitor').checked;
+        var el = view.querySelector('.seerrSettings');
+        if (el) el.style.display = enabled ? '' : 'none';
     }
 
     function updateLiveTvVisibility(view) {

@@ -54,13 +54,14 @@ namespace Emby.Xtream.Plugin.Service
         /// </summary>
         public static string SanitizeLine(string line,
             string username, string password,
-            string dispatcharrUser, string dispatcharrPass)
+            string dispatcharrUser, string dispatcharrPass,
+            string seerrApiKey = null)
         {
             if (string.IsNullOrEmpty(line)) return line;
 
             var s = line;
 
-            s = RedactCredentials(s, username, password, dispatcharrUser, dispatcharrPass);
+            s = RedactCredentials(s, username, password, dispatcharrUser, dispatcharrPass, seerrApiKey);
 
             // Emby access tokens and API keys, before anything else can split them.
             s = TokenParamRegex.Replace(s, "$1=<token-redacted>");
