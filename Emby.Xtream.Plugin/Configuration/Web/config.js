@@ -56,6 +56,8 @@ function (BaseView, loading) {
         this.unreviewedSeriesIds = {};
         this.dedupedVod = [];
         this.dedupedSeries = [];
+        this.vodSeerrResolutions = [];
+        this.seriesSeerrResolutions = [];
         // De-dup view filters (session-only, reset each load). Show: 'all' | 'included' |
         // 'excluded'; Reviewed: 'all' | 'reviewed' | 'unreviewed'.
         this.vodDedupedShowFilter = 'all';
@@ -361,6 +363,8 @@ function (BaseView, loading) {
         // De-duplicated review views (Movies + Series) — same blocklist as the tree above
         wireDedupedView(view, self, 'vod');
         wireDedupedView(view, self, 'series');
+        wireSeerrResolutionView(view, self, 'vod');
+        wireSeerrResolutionView(view, self, 'series');
         setupDedupMode(view, self, 'vod');
         setupDedupMode(view, self, 'series');
 
@@ -1967,6 +1971,115 @@ function updateEpgVisibility(view) {
             var btn = e.target.closest ? e.target.closest('.' + cfg.prefix + 'DedupedReviewedBtn') : null;
             if (btn) setDedupedFilter(self, type, 'Reviewed', btn.getAttribute('data-filter'));
         });
+    }
+
+
+    //
+    // Seerr Resolution view (ADR-C002 follow-up). Wanted titles the gate cannot auto-match,
+    // each with the provider entries a title search proposes. Reviewing a candidate reuses the
+    // de-dup view's own client-side toggle (toggleTitleReviewed), so the decision travels the
+    // exact same save path as every other review: no second writer, the store stays the single
+    // owner (ADR-C001).
+    //
+    function seerrResolutionConfig(type) {
+        return type === 'series'
+            ? { prefix: 'series', dataKey: 'seriesSeerrResolutions', loadClass: '.btnLoadSeriesSeerrResolution', mediaType: 'series' }
+            : { prefix: 'vod', dataKey: 'vodSeerrResolutions', loadClass: '.btnLoadVodSeerrResolution', mediaType: 'movie' };
+    }
+
+    function wireSeerrResolutionView(view, self, type) {
+        var cfg = seerrResolutionConfig(type);
+        view.querySelector(cfg.loadClass).addEventListener('click', function () {
+            loadSeerrResolutions(self, type);
+        });
+        view.querySelector('.' + cfg.prefix + 'SeerrResolutionList').addEventListener('click', function (e) {
+            var btn = e.target.closest ? e.target.closest('.seerrResolutionReviewBtn') : null;
+            if (!btn) return;
+            var ids = (btn.getAttribute('data-provider-ids') || '').split(',').map(Number).filter(Boolean);
+            if (!ids.length) return;
+            // The same toggle the de-dup view uses: pushes the ids into the client-side
+            // reviewed map, persisted by the ordinary Save via the decision store.
+            toggleTitleReviewed(self, type, ids, null);
+            btn.disabled = true;
+            btn.textContent = 'Reviewed (unsaved)';
+            btn.style.opacity = '0.55';
+        });
+    }
+
+    function loadSeerrResolutions(instance, type) {
+        var cfg = seerrResolutionConfig(type);
+        var view = instance.view;
+        var statusEl = view.querySelector('.' + cfg.prefix + 'SeerrResolutionStatus');
+        var listEl = view.querySelector('.' + cfg.prefix + 'SeerrResolutionList');
+        statusEl.style.color = '';
+        statusEl.textContent = 'Loading…';
+
+        ApiClient.getJSON(ApiClient.getUrl('XtreamTuner/Seerr/Resolutions', { MediaType: cfg.mediaType })).then(
+            function (rows) {
+                instance[cfg.dataKey] = rows || [];
+                renderSeerrResolutions(instance, type);
+            },
+            function () {
+                statusEl.style.color = '#cc4444';
+                statusEl.textContent = 'Failed to load';
+                listEl.style.display = 'none';
+            }
+        );
+    }
+
+    function renderSeerrResolutions(instance, type) {
+        var cfg = seerrResolutionConfig(type);
+        var view = instance.view;
+        var rows = instance[cfg.dataKey] || [];
+        var statusEl = view.querySelector('.' + cfg.prefix + 'SeerrResolutionStatus');
+        var listEl = view.querySelector('.' + cfg.prefix + 'SeerrResolutionList');
+
+        if (!rows.length) {
+            statusEl.style.color = '#52B54B';
+            statusEl.textContent = 'Nothing to resolve: every ' + (type === 'series' ? 'series' : 'movie') +
+                ' you asked for is matched, already reviewed, or not released yet';
+            listEl.style.display = 'none';
+            return;
+        }
+
+        statusEl.style.color = '#52B54B';
+        statusEl.textContent = rows.length + ' title(s) need resolution';
+        listEl.style.display = '';
+
+        var html = '';
+        for (var i = 0; i < rows.length; i++) {
+            var row = rows[i];
+            html += '<div style="padding:0.45em 0; border-bottom:1px solid rgba(128,128,128,0.12);">';
+            html += '<div style="font-weight:600;">' + escapeHtml(row.Title) +
+                (row.ReleaseDate ? ' <span style="opacity:0.6; font-weight:400;">(' + escapeHtml(row.ReleaseDate) + ')</span>' : '') +
+                '</div>';
+            var candidates = row.Candidates || [];
+            for (var k = 0; k < candidates.length; k++) {
+                var c = candidates[k];
+                html += '<div style="display:flex; align-items:center; gap:0.6em; padding:0.15em 0 0.15em 1em; flex-wrap:wrap;">';
+                html += '<span>' + escapeHtml(c.Name) + '</span>';
+                html += '<span style="opacity:0.6; font-size:0.85em;">' + escapeHtml(c.CategoryNames || '') + '</span>';
+                if (!c.InSelectedCategories) {
+                    // The exact TMDB match in a category the sync does not fetch: reviewing it
+                    // would be useless, the remedy is selecting the category.
+                    html += '<span style="color:#e67e22; font-size:0.85em;">exact TMDB match, but this category is not selected. Enable it in the category list above</span>';
+                } else {
+                    html += '<span style="opacity:0.5; font-size:0.85em;">';
+                    if (c.ExactTmdb) {
+                        html += 'exact TMDB match';
+                    } else {
+                        html += 'name match ' + c.Score + '%';
+                    }
+                    html += '</span>';
+                    var idAttr = (c.ProviderIds || []).join(',');
+                    html += '<button type="button" class="seerrResolutionReviewBtn" data-provider-ids="' + escapeHtml(idAttr) +
+                        '" style="cursor:pointer; border:1px solid rgba(82,181,75,0.5); border-radius:4px; background:none; color:#52B54B; padding:0.15em 0.7em; font-size:0.85em;">Review</button>';
+                }
+                html += '</div>';
+            }
+            html += '</div>';
+        }
+        listEl.innerHTML = html;
     }
 
     // Series get a distinct provider id per category, so excluding a title in one category

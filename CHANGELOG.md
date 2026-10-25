@@ -43,6 +43,18 @@ starting at 1.0.0 — independent of upstream
   redacted from the sanitized log download. Everything about the design is in
   [docs/architecture/seerr-review-gate.md](docs/architecture/seerr-review-gate.md).
 
+- **A Seerr Resolution view now proposes matches the review gate cannot make
+  (ADR-C004).** When a title you asked for does not auto-review because your provider
+  ships it without a TMDB ID, or the right ID sits in a category you have not selected,
+  the Movies and Series tabs now have a third view beside the browse and de-duplicated
+  lists. It shows the wanted titles that need a human, and for each one the provider
+  entries a title search proposes, with the category and a match score; clicking
+  *Review* marks the entry reviewed and the next sync writes it. A matching ID found
+  only in an unselected category is flagged with the category name instead (select the
+  category; reviewing it would do nothing), and titles that have not been released yet
+  are not listed at all. The proposals are never acted on automatically: the strict
+  gate is unchanged, and only your click turns a proposal into a review.
+
 ### Fixed
 
 - **The dashboard's update banner no longer advertises another fork's releases

@@ -225,6 +225,14 @@ namespace Emby.Xtream.Plugin.Api
     {
     }
 
+    [Authenticated(Roles = "Admin")]
+    [Route("/XtreamTuner/Seerr/Resolutions", "GET", Summary = "Lists Seerr titles with no automatic match, each with the provider entries a title search proposes")]
+    public class GetSeerrResolutions : IReturn<List<SeerrResolutionRow>>
+    {
+        /// <summary>"movie" or "series".</summary>
+        public string MediaType { get; set; }
+    }
+
     public class DedupedItemDto
     {
         // A title can map to several provider IDs: movies share one StreamId across
@@ -1379,6 +1387,35 @@ namespace Emby.Xtream.Plugin.Api
             {
                 Logger.Warn("Failed to fetch Dispatcharr profiles: {0}", ex.Message);
                 return new List<Client.Models.DispatcharrProfile>();
+            }
+        }
+
+        public async Task<object> Get(GetSeerrResolutions request)
+        {
+            var config = Plugin.Instance?.Configuration;
+            if (config == null)
+            {
+                return new List<SeerrResolutionRow>();
+            }
+
+            var mediaType = string.Equals(request.MediaType, "series", StringComparison.OrdinalIgnoreCase)
+                ? "series"
+                : "movie";
+
+            try
+            {
+                // Read-only: the review decision itself is made in the dashboard and saved
+                // through the ordinary settings save, so the decision store stays the single
+                // writer (ADR-C001).
+                return await Plugin.Instance.StrmSyncService
+                    .GetSeerrResolutionsAsync(config, mediaType, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn("Seerr resolution view failed for {0}: [{1}] {2}",
+                    mediaType, ex.GetType().Name, ex.Message);
+                return new List<SeerrResolutionRow>();
             }
         }
 

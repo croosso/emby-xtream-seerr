@@ -4231,6 +4231,46 @@ namespace Emby.Xtream.Plugin.Service
             }
         }
 
+        private SeerrResolutionService _seerrResolution;
+
+        /// <summary>
+        /// The Seerr resolution view's builder (ADR-C002 follow-up), created lazily so tests can
+        /// set <see cref="SeerrHandler"/> after construction. Shares the monitor's snapshot cache
+        /// and the sync's rate-limited HTTP client for catalogue fetches.
+        /// </summary>
+        internal SeerrResolutionService SeerrResolution
+        {
+            get
+            {
+                if (_seerrResolution == null)
+                {
+                    _seerrResolution = new SeerrResolutionService(
+                        _logger,
+                        SeerrMonitorService,
+                        new Emby.Xtream.Plugin.Client.SeerrClient(_logger, SeerrHandler),
+                        _httpClient);
+                }
+                return _seerrResolution;
+            }
+        }
+
+        /// <summary>
+        /// Resolution rows for the dashboard's Seerr Resolution view. Kept here rather than in the
+        /// API layer so the reviewed-set read goes through the decision store (the single reader
+        /// of decision state) and the series name normalizer stays in one place.
+        /// </summary>
+        internal async Task<List<SeerrResolutionRow>> GetSeerrResolutionsAsync(
+            PluginConfiguration config, string mediaType, CancellationToken cancellationToken)
+        {
+            var state = GetDecisionStore(config).Read(config);
+            var reviewed = string.Equals(mediaType, "series", StringComparison.OrdinalIgnoreCase)
+                ? state.ReviewedSeriesIds
+                : state.ReviewedVodStreamIds;
+            return await SeerrResolution.GetResolutionsAsync(
+                config, mediaType, SeerrSeriesNameNormalizer(config),
+                reviewed ?? new HashSet<int>(), cancellationToken).ConfigureAwait(false);
+        }
+
         /// <summary>
         /// The name pipeline a Seerr series title goes through so it matches this sync's
         /// series names (ADR-C002): exactly the cleaning and sanitizing a provider title

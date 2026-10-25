@@ -33,24 +33,35 @@ namespace Emby.Xtream.Plugin.Service
             System.Text.RegularExpressions.RegexOptions.Compiled);
 
         public static readonly SeerrMonitoredSnapshot Empty = Create(
-            new HashSet<int>(), new Dictionary<string, HashSet<int>>(0, StringComparer.OrdinalIgnoreCase));
+            new HashSet<int>(), new Dictionary<string, HashSet<int>>(0, StringComparer.OrdinalIgnoreCase),
+            new List<SeerrWantedItem>());
 
         public HashSet<int> MovieTmdbIds { get; private set; }
+
+        /// <summary>
+        /// Every distinct wanted title (request or watchlist row) behind the sets above, for the
+        /// resolution view: it needs per-want detail the gate never asked for, like the movie
+        /// title (request rows carry none) and the release date that filters unreleased titles.
+        /// </summary>
+        public List<SeerrWantedItem> Wanted { get; private set; }
 
         /// <summary>Normalized series name → known first-air years; an empty set means the year is unknown.</summary>
         public Dictionary<string, HashSet<int>> SeriesByYear { get; private set; }
 
         public int SeriesNameCount { get { return SeriesByYear.Count; } }
 
-        private SeerrMonitoredSnapshot(HashSet<int> movieTmdbIds, Dictionary<string, HashSet<int>> seriesByYear)
+        private SeerrMonitoredSnapshot(HashSet<int> movieTmdbIds, Dictionary<string, HashSet<int>> seriesByYear,
+            List<SeerrWantedItem> wanted)
         {
             MovieTmdbIds = movieTmdbIds;
             SeriesByYear = seriesByYear;
+            Wanted = wanted;
         }
 
-        private static SeerrMonitoredSnapshot Create(HashSet<int> movieTmdbIds, Dictionary<string, HashSet<int>> seriesByYear)
+        private static SeerrMonitoredSnapshot Create(HashSet<int> movieTmdbIds, Dictionary<string, HashSet<int>> seriesByYear,
+            List<SeerrWantedItem> wanted)
         {
-            return new SeerrMonitoredSnapshot(movieTmdbIds, seriesByYear);
+            return new SeerrMonitoredSnapshot(movieTmdbIds, seriesByYear, wanted);
         }
 
         /// <summary>
@@ -76,8 +87,15 @@ namespace Emby.Xtream.Plugin.Service
         {
             var movies = new HashSet<int>();
             var series = new Dictionary<string, HashSet<int>>(StringComparer.OrdinalIgnoreCase);
+            var wanted = new List<SeerrWantedItem>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var item in items)
             {
+                if (item != null && item.TmdbId > 0 && seen.Add(item.TmdbId + ":" + (item.IsSeries ? "tv" : "movie")))
+                {
+                    wanted.Add(item);
+                }
+
                 if (item == null || item.TmdbId <= 0) continue;
                 if (item.IsSeries)
                 {
@@ -97,7 +115,7 @@ namespace Emby.Xtream.Plugin.Service
                     movies.Add(item.TmdbId);
                 }
             }
-            return Create(movies, series);
+            return Create(movies, series, wanted);
         }
     }
 
@@ -221,6 +239,11 @@ namespace Emby.Xtream.Plugin.Service
                     {
                         item.Title = fetched.Title;
                         item.FirstAirYear = fetched.FirstAirYear;
+                        // The resolution view reuses the date rather than fetching it again.
+                        if (string.IsNullOrWhiteSpace(item.ReleaseDate))
+                        {
+                            item.ReleaseDate = fetched.ReleaseDate;
+                        }
                     }
                 }
 

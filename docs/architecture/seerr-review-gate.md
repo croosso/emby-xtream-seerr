@@ -27,6 +27,7 @@ Its own decision records so far:
 | [ADR-C001](../decisions/croosso/001-decision-store-sidecar.md) | Decisions live in a plugin-owned `decisions.json` store; the configuration fields are mirrors. Mutations go through the store's lock, so a sync and a dashboard save can never silently lose each other's changes. |
 | [ADR-C002](../decisions/croosso/002-seerr-watchlist-feeds-review-gate.md) | Seerr requests and watchlists feed the review gate, pulled at sync time. The subject of this page. |
 | [ADR-C003](../decisions/croosso/003-update-feed-points-at-this-repo.md) | This project has its own name (`emby-xtream-seerr`), release feed, and `seerr-vX.Y.Z` version sequence — it does not offer another repo's releases through its own update button. |
+| [ADR-C004](../decisions/croosso/004-seerr-resolution-view.md) | The Seerr Resolution view proposes provider entries for wanted titles the gate cannot match; a human reviews, the fuzzy matcher never acts on its own. |
 
 ## The setup this is built for
 
@@ -143,10 +144,17 @@ watched, Seerr and the monitor are both fine and the cause is one of the three c
 above. If it does not, the problem is on the Seerr side (the request is still pending,
 declined, or the poll failed and the monitor stood down with a warning).
 
-A bounded escape hatch for case 2 exists as a possible follow-up: resolve held titles'
-TMDB IDs through the plugin's existing fallback lookup when the monitored set is small.
-It is deliberately not built, because per-title lookup cost against a held catalogue
-is exactly what the gate exists to avoid; that trade-off would need its own ADR.
+A bounded escape hatch for case 2 is deliberately not built into the gate: per-title
+lookup cost against a held catalogue is exactly what the gate exists to avoid. Instead,
+the **Seerr Resolution view** (on both the Movies and Series tabs, beside the browse and
+de-duplicated views) lists every wanted title with no automatic match and proposes the
+provider entries a title search finds: exact ID, name match, or similar name, each with
+its category and score. Reviewing a candidate marks it reviewed through the ordinary
+save path, and the next sync writes it; an exact ID found in a category you have not
+selected is flagged with the category name instead of a review button, because the fix
+there is selecting the category. Unreleased titles are not listed: they cannot be in a
+provider catalogue yet. Fuzzy proposals are never acted on automatically; see
+[ADR-C004](../decisions/croosso/004-seerr-resolution-view.md).
 
 ## When Seerr is unreachable
 

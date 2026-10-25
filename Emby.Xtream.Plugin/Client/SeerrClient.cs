@@ -17,10 +17,17 @@ namespace Emby.Xtream.Plugin.Client
 
         /// <summary>
         /// The series' first-air year, from the TMDB proxy's <c>firstAirDate</c>. Null when
-        /// unknown (watchlist rows carry no dates, and a failed lookup has none) — the
+        /// unknown (watchlist rows carry no dates, and a failed proxy lookup has none) — the
         /// year-suffix match is only trusted when this is known (ADR-C002).
         /// </summary>
         public int? FirstAirYear;
+
+        /// <summary>
+        /// The release or first-air date from Seerr's TMDB proxy, as an ISO string
+        /// (<c>yyyy-MM-dd</c>) or null when unknown. The resolution view uses it to drop
+        /// titles that have not been released yet: they cannot be in a provider catalogue.
+        /// </summary>
+        public string ReleaseDate;
     }
 
     /// <summary>
@@ -185,6 +192,7 @@ namespace Emby.Xtream.Plugin.Client
                 string airDate;
                 if (TryGetString(root, "firstAirDate", out airDate))
                 {
+                    item.ReleaseDate = airDate;
                     var match = System.Text.RegularExpressions.Regex.Match(airDate, @"\d{4}");
                     int year;
                     if (match.Success
@@ -193,6 +201,39 @@ namespace Emby.Xtream.Plugin.Client
                     {
                         item.FirstAirYear = year;
                     }
+                }
+                return item;
+            }
+        }
+
+        /// <summary>
+        /// The movie title and release date from Seerr's TMDB proxy
+        /// (<c>/api/v1/movie/{id}</c>), for request rows — which, like series request rows,
+        /// carry no title of their own. Returns null on any failure.
+        /// </summary>
+        public async Task<SeerrWantedItem> GetMovieTitleAsync(
+            string baseUrl, string apiKey, int tmdbId, CancellationToken cancellationToken)
+        {
+            var url = CombineUrl(baseUrl, "/api/v1/movie/") + tmdbId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            using (var doc = await GetJsonAsync(url, apiKey, cancellationToken).ConfigureAwait(false))
+            {
+                if (doc == null) return null;
+                var root = doc.RootElement;
+                string title = null;
+                foreach (var field in new[] { "title", "originalTitle", "original_title" })
+                {
+                    if (TryGetString(root, field, out title) && !string.IsNullOrWhiteSpace(title))
+                    {
+                        break;
+                    }
+                    title = null;
+                }
+
+                var item = new SeerrWantedItem { TmdbId = tmdbId, IsSeries = false, Title = title };
+                string releaseDate;
+                if (TryGetString(root, "releaseDate", out releaseDate) || TryGetString(root, "release_date", out releaseDate))
+                {
+                    item.ReleaseDate = releaseDate;
                 }
                 return item;
             }

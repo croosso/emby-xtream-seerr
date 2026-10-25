@@ -1092,6 +1092,21 @@
                             </div>
                         </div>
 
+                            <!-- Seerr Resolution view: wanted titles the gate cannot auto-match, with proposed provider entries -->
+                            <div class="vodSeerrResolutionSection" style="margin-top:1em; border-top:1px solid rgba(128,128,128,0.15); padding-top:0.75em;">
+                                <div class="fieldDescription" style="margin-bottom:0.5em;">
+                                    Movies you asked for in Seerr that the review gate cannot match automatically (no provider TMDB ID or name match),
+                                    with the provider entries a title search proposes. Reviewing a candidate marks it reviewed; <strong>Save settings</strong> to
+                                    apply, and the next sync writes it. Titles that have not been released yet are not listed: they cannot be in a provider
+                                    catalogue yet.
+                                </div>
+                                <button class="btnLoadVodSeerrResolution raised button-secondary" is="emby-button" type="button">
+                                    <span>Load Seerr resolutions</span>
+                                </button>
+                                <span class="vodSeerrResolutionStatus" style="margin-left:0.5em; color:#52B54B;"></span>
+                                <div class="vodSeerrResolutionList" style="display:none; margin-top:0.6em; max-height:450px; overflow-y:auto; border:1px solid rgba(128,128,128,0.15); border-radius:4px; padding:0.5em;"></div>
+                            </div>
+
                         <!-- Multiple folders mode: header + refresh -->
                         <div class="movieFoldersContainer" style="display:none;">
                             <div class="fieldDescription" style="margin-bottom:0.5em;">
@@ -1271,6 +1286,21 @@
                                 </div>
                             </div>
                         </div>
+
+                            <!-- Seerr Resolution view: wanted titles the gate cannot auto-match, with proposed provider entries -->
+                            <div class="seriesSeerrResolutionSection" style="margin-top:1em; border-top:1px solid rgba(128,128,128,0.15); padding-top:0.75em;">
+                                <div class="fieldDescription" style="margin-bottom:0.5em;">
+                                    Series you asked for in Seerr that the review gate cannot match automatically (no provider TMDB ID or name match),
+                                    with the provider entries a title search proposes. Reviewing a candidate marks it reviewed; <strong>Save settings</strong> to
+                                    apply, and the next sync writes it. Titles that have not been released yet are not listed: they cannot be in a provider
+                                    catalogue yet.
+                                </div>
+                                <button class="btnLoadSeriesSeerrResolution raised button-secondary" is="emby-button" type="button">
+                                    <span>Load Seerr resolutions</span>
+                                </button>
+                                <span class="seriesSeerrResolutionStatus" style="margin-left:0.5em; color:#52B54B;"></span>
+                                <div class="seriesSeerrResolutionList" style="display:none; margin-top:0.6em; max-height:450px; overflow-y:auto; border:1px solid rgba(128,128,128,0.15); border-radius:4px; padding:0.5em;"></div>
+                            </div>
 
                         <!-- Multiple folders mode: header + refresh -->
                         <div class="seriesFoldersContainer" style="display:none;">
