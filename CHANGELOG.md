@@ -10,6 +10,12 @@ starting at 1.0.0 — independent of upstream
 
 ### Added
 
+- Nothing yet.
+
+## [1.10.0] - 2026-10-25
+
+### Added
+
 - **Your review decisions now have one owner, so concurrent saves can't silently lose them
   (ADR-C001).** Every keep/exclude/review/un-review decision used to live in the plugin's
   single settings file, and each writer — the settings page, a running sync — rewrote that
