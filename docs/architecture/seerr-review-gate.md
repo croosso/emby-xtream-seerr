@@ -104,6 +104,50 @@ matched by year). Titles matching only their exact name require the year to be k
 watchlist rows carry no dates, so a year-suffixed provider title matches a *request*
 rather than a watchlist row.
 
+## When a movie does not match, and what to do about it
+
+Movie matching is strict on the TMDB ID, and that is deliberate: a provider ID proves
+identity, a title alone only suggests it. Strictness buys precision (no false
+auto-reviews) at the cost of coverage, and there are three distinct situations where a
+requested movie does not auto-review. Each has its own diagnosis and its own remedy.
+
+**1. The provider has not added the movie yet.** Nothing has failed. The monitor is
+watching the ID, the movie is simply not in the catalogue, and the title syncs on the
+first run after the provider carries it. This is the normal case for new releases.
+Diagnosis: the sync log shows the monitor's count (`Seerr monitor: watching 1 movie
+id(s) ...`) but no match line for the title. Remedy: none, wait.
+
+**2. The provider lists the movie, but without a TMDB ID.** The monitor never performs
+a TMDB lookup for held titles (see ADR-C002: the gate is deliberately ordered so a held
+title costs no fallback lookup, and holding thousands of them nightly is the gate's
+whole point). A provider that ships its catalogue with an empty `tmdb_id` field will
+therefore keep holding a requested movie forever, and the log shows no sign of what to
+do. Diagnosis: check the provider's VOD list for the title and look at its `tmdb_id`
+field (Dispatcharr exposes it directly; a browser request to
+`player_api.php?action=get_vod_streams` shows it). An empty field is this case.
+Remedy: review the title manually in the de-dup view, or read on.
+
+**3. The provider lists the movie with the right TMDB ID, but in a category you have
+not selected.** The sync only fetches your selected categories, so the gate never sees
+the entry at all. This one is easy to mistake for case 2: same symptom (watched, never
+matched), different cause. Diagnosis: search the whole catalogue for the title and note
+which category carries the version with the populated `tmdb_id`. Providers commonly
+cross-list the same movie several ways, and the variants differ in whether they carry
+an ID: a bare `Name` entry in one of your selected categories may have an empty
+`tmdb_id` while the `Name (Year)` entry in a category you have not ticked carries the
+matching one. Remedy: select that category in the plugin's movie category settings, or
+review the title manually.
+
+The log line to read first is the monitor's own count: if it shows the movie as
+watched, Seerr and the monitor are both fine and the cause is one of the three cases
+above. If it does not, the problem is on the Seerr side (the request is still pending,
+declined, or the poll failed and the monitor stood down with a warning).
+
+A bounded escape hatch for case 2 exists as a possible follow-up: resolve held titles'
+TMDB IDs through the plugin's existing fallback lookup when the monitored set is small.
+It is deliberately not built, because per-title lookup cost against a held catalogue
+is exactly what the gate exists to avoid; that trade-off would need its own ADR.
+
 ## When Seerr is unreachable
 
 Nothing breaks. One warning is logged, the monitor stands down for that run, and the
