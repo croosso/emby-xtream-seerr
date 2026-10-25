@@ -269,7 +269,9 @@ namespace Emby.Xtream.Plugin.Service
 
         /// <summary>
         /// Adds the STRM files already in <paramref name="dir"/> to <paramref name="writtenPaths"/>.
-        /// Used when writing an item failed, so its existing files still count as in use.
+        /// Used when writing an item failed, so its existing files still count as in use, and on
+        /// the movie smart-skip path, so the version entries a previous run wrote beside the
+        /// main file survive orphan cleanup.
         /// </summary>
         private void RecordExistingStrms(string dir, HashSet<string> writtenPaths)
         {
