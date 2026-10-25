@@ -4408,10 +4408,14 @@ namespace Emby.Xtream.Plugin.Service
             var isNewMovie = lastMovieTs == 0 || movie.Added > lastMovieTs;
             if (!isNewMovie && config.SmartSkipExisting && File.Exists(strmPath))
             {
-                lock (writtenPaths)
-                {
-                    writtenPaths.Add(strmPath);
-                }
+                // The folder is in use as a whole, not just the main entry: a previous run
+                // may have written " - Version N" files beside the main one. Registering
+                // only strmPath would hand those to orphan cleanup, which deletes owned
+                // files that Dispatcharr still serves. The version set freezes at write
+                // time (same contract as the main entry's URL) and is reconciled by the
+                // next rewrite, which registers what it writes and lets cleanup take
+                // whatever it no longer produces.
+                RecordExistingStrms(movieDir, writtenPaths);
                 return MovieWriteOutcome.Skipped;
             }
 

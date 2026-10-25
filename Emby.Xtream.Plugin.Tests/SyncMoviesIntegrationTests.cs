@@ -750,6 +750,101 @@ namespace Emby.Xtream.Plugin.Tests
         }
 
         // -----------------------------------------------------------------
+        // Dispatcharr multi-version entries survive a smart-skipped sync
+        // -----------------------------------------------------------------
+
+        /// <summary>
+        /// The smart-skip path used to register only the main STRM path in writtenPaths.
+        /// A previous run may have written " - Version N" entries beside it, so orphan
+        /// cleanup deleted those files on the next sync — even while Dispatcharr still
+        /// served them. The skip has to treat the folder as in use as a whole.
+        /// </summary>
+        [Fact]
+        public async Task SmartSkip_ProtectsDispatcharrVersionEntries_FromOrphanCleanup()
+        {
+            var config = DefaultConfig();
+            config.SmartSkipExisting = true;
+            config.CleanupOrphans = true;
+            EnableDispatcharrForMovie(config, providerCount: 2);
+
+            RegisterVodStreams(VodStreamsJson(VodStream(streamId: 1, name: "Test Movie", added: 1000)));
+            var svc = MakeService();
+            svc.DispatcharrHandler = Handler;
+            await svc.SyncMoviesAsync(config, None, SaveConfig);
+
+            var dir = Path.Combine(TempDir.Path, "Movies", "Test Movie");
+            Assert.True(File.Exists(Path.Combine(dir, "Test Movie.strm")));
+            Assert.True(File.Exists(Path.Combine(dir, "Test Movie - Version 2.strm")));
+            Assert.Equal(1000, config.LastMovieSyncTimestamp);
+
+            // Second sync: same catalogue, the movie is no longer new, smart skip applies.
+            RegisterVodStreams(VodStreamsJson(VodStream(streamId: 1, name: "Test Movie", added: 1000)));
+            await svc.SyncMoviesAsync(config, None, SaveConfig);
+
+            Assert.True(File.Exists(Path.Combine(dir, "Test Movie.strm")),
+                "the main entry must survive as before");
+            Assert.True(File.Exists(Path.Combine(dir, "Test Movie - Version 2.strm")),
+                "a smart-skipped movie's version entries must not be swept as orphans");
+        }
+
+        /// <summary>
+        /// Freezing the version set at write time is only half the contract: a rewrite must
+        /// still reconcile it. When a rewritten movie produces fewer entries than the run
+        /// before it, the files the rewrite did not produce are orphans again and leave.
+        /// </summary>
+        [Fact]
+        public async Task Rewrite_WithFewerProviderVersions_DeletesStaleVersionEntries()
+        {
+            var config = DefaultConfig();
+            config.CleanupOrphans = true;
+            EnableDispatcharrForMovie(config, providerCount: 2);
+
+            RegisterVodStreams(VodStreamsJson(VodStream(streamId: 1, name: "Test Movie", added: 1000)));
+            var svc = MakeService();
+            svc.DispatcharrHandler = Handler;
+            await svc.SyncMoviesAsync(config, None, SaveConfig);
+
+            var dir = Path.Combine(TempDir.Path, "Movies", "Test Movie");
+            Assert.True(File.Exists(Path.Combine(dir, "Test Movie - Version 2.strm")));
+
+            // Rewrite: the movie is new again and Dispatcharr now serves a single version.
+            config.LastMovieSyncTimestamp = 0;
+            EnableDispatcharrForMovie(config, providerCount: 1);
+            RegisterVodStreams(VodStreamsJson(VodStream(streamId: 1, name: "Test Movie", added: 1000)));
+            await svc.SyncMoviesAsync(config, None, SaveConfig);
+
+            Assert.True(File.Exists(Path.Combine(dir, "Test Movie.strm")),
+                "the rewritten main entry must stay");
+            Assert.False(File.Exists(Path.Combine(dir, "Test Movie - Version 2.strm")),
+                "a rewrite that no longer produces a version entry must let cleanup take it");
+        }
+
+        /// <summary>
+        /// Registers the Dispatcharr responses for movie stream id 1. The providers rule is
+        /// registered before the detail rule because "api/vod/movies/1/" is a substring of
+        /// the providers URL and FakeHttpHandler takes the first match with a queued body.
+        /// </summary>
+        private void EnableDispatcharrForMovie(PluginConfiguration config, int providerCount)
+        {
+            config.EnableDispatcharr = true;
+            config.DispatcharrUrl = "http://fake-dispatcharr";
+            config.DispatcharrUser = "admin";
+            config.DispatcharrPass = "secret";
+            Handler.RespondWith("/api/accounts/token/", "{\"access\":\"tok\",\"refresh\":\"ref\"}");
+            if (providerCount == 2)
+            {
+                Handler.RespondWith("api/vod/movies/1/providers/",
+                    "[{\"id\":1,\"stream_id\":11,\"name\":\"A\"},{\"id\":2,\"stream_id\":12,\"name\":\"B\"}]");
+            }
+            else
+            {
+                Handler.RespondWith("api/vod/movies/1/providers/",
+                    "[{\"id\":1,\"stream_id\":11,\"name\":\"A\"}]");
+            }
+            Handler.RespondWith("api/vod/movies/1/", "{\"id\":1,\"uuid\":\"movie-uuid\"}");
+        }
+
+        // -----------------------------------------------------------------
         // Decision store sizes are reported every sync (ADR-F005)
         // -----------------------------------------------------------------
 
