@@ -27,6 +27,15 @@ namespace Emby.Xtream.Plugin.Service
             @"^[A-Z]{2}\s+-\s+",
             RegexOptions.Compiled);
 
+        // Provider quality tags in square brackets: [MULTI-SUB], [MULTI-SUB-AUDIO], [MULTI-AUDIO].
+        // Matches only ALL-CAPS letters/digits containing at least one hyphen, so a bracketed
+        // word that IS the title (the film "[REC]") keeps its brackets. Stripping these lets the
+        // review gate and the Seerr monitor recognize a tagged variant as its plain-named title
+        // (ADR-C005): "YAGA [MULTI-SUB]" cleans to "YAGA" and matches a Seerr request for YAGA.
+        private static readonly Regex BracketQualityTagRegex = new Regex(
+            @"\s*\[[A-Z0-9 -]*-[A-Z0-9 -]*\]\s*",
+            RegexOptions.Compiled);
+
         private static readonly Regex MultipleSpacesRegex = new Regex(
             @"\s{2,}",
             RegexOptions.Compiled);
@@ -50,6 +59,9 @@ namespace Emby.Xtream.Plugin.Service
 
             // Remove plain dash-style prefix labels like "EN - ", "4K-NF - ", "US - "
             result = DashPrefixRegex.Replace(result, string.Empty);
+
+            // Remove square-bracketed quality tags like "[MULTI-SUB]", anywhere in the name.
+            result = BracketQualityTagRegex.Replace(result, " ");
 
             // Remove user-specified terms (one per line)
             if (!string.IsNullOrWhiteSpace(userRemoveTerms))

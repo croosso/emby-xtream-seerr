@@ -55,6 +55,16 @@ starting at 1.0.0 — independent of upstream
   are not listed at all. The proposals are never acted on automatically: the strict
   gate is unchanged, and only your click turns a proposal into a review.
 
+- **Variant tags like [MULTI-SUB] no longer hide a title from the review gate
+  (ADR-C005).** Providers cross-list shows with quality tags in square brackets, and
+  until now `YAGA [MULTI-SUB]` was a different name from `YAGA` everywhere it mattered:
+  the review gate could not match a Seerr request for the plain name, and the de-dup
+  view showed the tagged copy as a separate row. The name cleaning pipeline now strips
+  all-caps bracketed tags containing a hyphen (`[MULTI-SUB]`, `[MULTI-SUB-AUDIO]`),
+  while a bracketed word that IS the title, like the film `[REC]`, keeps its brackets.
+  Existing tagged folders keep syncing as they are and switch to the plain name the
+  next time their title re-syncs; the old files are then cleaned up as orphans.
+
 ### Fixed
 
 - **The dashboard's update banner no longer advertises another fork's releases

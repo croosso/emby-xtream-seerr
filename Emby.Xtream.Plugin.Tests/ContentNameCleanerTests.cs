@@ -28,6 +28,27 @@ namespace Emby.Xtream.Plugin.Tests
             Assert.Equal("The Movie", result);
         }
 
+        [Theory]
+        [InlineData("Carrie [MULTI-SUB]", "Carrie")]
+        [InlineData("The Diplomat [MULTI-SUB-AUDIO]", "The Diplomat")]
+        [InlineData("Bad Monkey [MULTI-SUB]", "Bad Monkey")]
+        [InlineData("[MULTI-SUB] The Movie", "The Movie")]
+        [InlineData("YAGA [MULTI-SUB]", "YAGA")]
+        public void RemovesBracketQualityTags(string input, string expected)
+        {
+            // ADR-C005: providers tag variants with [MULTI-SUB]-style brackets, and the tag
+            // was hiding the plain title from the review gate and the Seerr monitor.
+            Assert.Equal(expected, ContentNameCleaner.CleanContentName(input));
+        }
+
+        [Fact]
+        public void BracketedTitlesWithoutHyphensAreKept()
+        {
+            // The hyphen requirement is what separates a quality tag from a title that IS
+            // bracketed: the film "[REC]" must survive cleaning untouched.
+            Assert.Equal("[REC]", ContentNameCleaner.CleanContentName("[REC]"));
+        }
+
         [Fact]
         public void RemovesUserTerms()
         {

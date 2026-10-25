@@ -344,6 +344,25 @@ namespace Emby.Xtream.Plugin.Tests
         }
 
         [Fact]
+        public async Task Series_BracketQualityTag_VariantMatchesThePlainSeerrName()
+        {
+            // ADR-C005: "Wanted Show [MULTI-SUB]" cleans to "Wanted Show", so a Seerr
+            // request for the plain name reaches the tagged variant through the gate.
+            var config = SeerrConfig();
+            config.EnableContentNameCleaning = true;
+            RegisterSeerr(null, WatchlistJson((1234, "Wanted Show", "tv")));
+            Handler.RespondWith("action=get_series_info&series_id=7", SeriesDetailJson(seriesId: 7));
+            Handler.RespondWith("action=get_series", SeriesListJson(
+                Series(seriesId: 7, name: "Wanted Show [MULTI-SUB]")));
+
+            var service = MakeSeerrService();
+            await service.SyncSeriesAsync(config, None, SaveConfig);
+
+            Assert.True(File.Exists(EpisodeStrmPath("Wanted Show", 1, 1)));
+            Assert.Contains(7, ParseIds(config.ReviewedSeriesIdsJson));
+        }
+
+        [Fact]
         public async Task Series_MonitorOff_HeldNormally()
         {
             var config = SeerrConfig();
