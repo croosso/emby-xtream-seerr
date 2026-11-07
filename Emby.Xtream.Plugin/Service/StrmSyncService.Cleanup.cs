@@ -37,6 +37,9 @@ namespace Emby.Xtream.Plugin.Service
     /// - the empty-folder loop in CleanupOrphans: Directory.Delete is not recursive and refuses
     ///   a folder that still has files, and the library folder itself cannot become empty,
     ///   because cleanup refuses to run when the sync wrote nothing (ADR-013).
+    /// - in SelectDueOrphans, the null-ledger-path check and the "first-missing in the future"
+    ///   boundary (&gt; vs &gt;=): OrphanGraceLedger.Load(null) already reads as empty, and resetting
+    ///   a time equal to now to now changes nothing. The waiting counter only feeds the log.
     /// </summary>
     public partial class StrmSyncService
     {
@@ -307,8 +310,29 @@ namespace Emby.Xtream.Plugin.Service
         private static string NormalizeDirectory(string path)
             => Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
+        /// <summary>
+        /// How long a file may be missing from the catalogue before cleanup deletes it (ADR-C007).
+        /// Null or a zero period deletes on the first run that misses it, as before.
+        /// </summary>
+        private sealed class OrphanGrace
+        {
+            public TimeSpan Period;
+
+            /// <summary>The ledger file; null when the records root cannot be resolved.</summary>
+            public string LedgerPath;
+
+            public DateTime NowUtc;
+
+            /// <summary>
+            /// URLs this run wrote or found up to date. An orphan holding one of them was moved,
+            /// not lost, so it skips the wait. Null when the caller does not collect them.
+            /// </summary>
+            public HashSet<string> WrittenUrls;
+        }
+
         private int CleanupOrphans(
-            string rootPath, HashSet<string> validPaths, double safetyThreshold, PluginConfiguration config)
+            string rootPath, HashSet<string> validPaths, double safetyThreshold, PluginConfiguration config,
+            OrphanGrace grace = null)
         {
             if (!Directory.Exists(rootPath))
             {
@@ -364,6 +388,14 @@ namespace Emby.Xtream.Plugin.Service
                         orphans.Count, ownedTotal, ratio, safetyThreshold);
                     return 0;
                 }
+            }
+
+            // A complete fetch that does not list a title is still not proof the title is gone:
+            // Dispatcharr moves relations between movie rows on every refresh, so a movie can be
+            // missing for hours and come back unchanged. Wait out the grace period first.
+            if (grace != null && grace.Period > TimeSpan.Zero)
+            {
+                orphans = SelectDueOrphans(orphans, rootPath, grace);
             }
 
             var removed = 0;
@@ -436,6 +468,110 @@ namespace Emby.Xtream.Plugin.Service
             }
 
             return removed;
+        }
+
+        /// <summary>
+        /// Splits the orphan candidates into those cleanup may delete now and those still inside
+        /// their grace period, and rewrites the ledger to hold exactly the second group (ADR-C007).
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Due now: a file whose URL this run wrote somewhere else (the title moved, e.g. renamed
+        /// or a folder-naming change, and waiting would leave a duplicate folder in the library),
+        /// and a file first seen missing at least <see cref="OrphanGrace.Period"/> ago.
+        /// </para>
+        /// <para>
+        /// Everything else waits. A candidate that came back drops out of the ledger because the
+        /// ledger is rebuilt from this run's candidates, so its next absence starts a fresh clock.
+        /// Without a ledger (no records root) nothing absent is ever due: deleting immediately
+        /// would bring back the bug this exists to fix, so the files stay and the log says why.
+        /// </para>
+        /// </remarks>
+        private List<string> SelectDueOrphans(List<string> orphans, string rootPath, OrphanGrace grace)
+        {
+            const int WaitingSampleSize = 15;
+            Action<string> warn = message => _logger.Warn(message);
+
+            var ledger = grace.LedgerPath == null ? null : OrphanGraceLedger.Load(grace.LedgerPath, warn);
+            var pending = new Dictionary<string, DateTime>(StringComparer.Ordinal);
+            var due = new List<string>();
+            var waitingFolders = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+            var waiting = 0;
+
+            foreach (var orphan in orphans)
+            {
+                if (grace.WrittenUrls != null && grace.WrittenUrls.Contains(ReadStrmUrl(orphan)))
+                {
+                    due.Add(orphan);
+                    continue;
+                }
+
+                var key = RelativeToRoot(orphan, rootPath);
+                waiting++;
+                waitingFolders.Add(Path.GetDirectoryName(key) ?? key);
+                if (ledger == null)
+                {
+                    continue;
+                }
+
+                // A first-missing time in the future (clock change, hand-edited file) restarts
+                // the clock rather than being trusted: the safe direction is always later.
+                DateTime firstMissing;
+                if (!ledger.TryGetValue(key, out firstMissing) || firstMissing > grace.NowUtc)
+                {
+                    firstMissing = grace.NowUtc;
+                }
+
+                if (grace.NowUtc - firstMissing >= grace.Period)
+                {
+                    due.Add(orphan);
+                    waiting--;
+                }
+                else
+                {
+                    pending[key] = firstMissing;
+                }
+            }
+
+            if (ledger != null)
+            {
+                OrphanGraceLedger.Save(grace.LedgerPath, pending, warn);
+            }
+
+            if (waiting > 0)
+            {
+                // Folders still pending, not every pending file: a multi-version movie would
+                // otherwise fill the sample on its own.
+                var sample = waitingFolders.Take(WaitingSampleSize).ToList();
+                if (ledger == null)
+                {
+                    _logger.Warn(
+                        "Orphan cleanup: keeping {0} file(s) missing from the catalogue because the records folder is unavailable, so their grace period cannot be tracked: {1}{2}",
+                        waiting, string.Join(", ", sample), waitingFolders.Count > sample.Count ? ", ..." : string.Empty);
+                }
+                else
+                {
+                    _logger.Info(
+                        "Orphan cleanup: keeping {0} file(s) missing from the catalogue until they have been gone for {1:0.#} hour(s): {2}{3}",
+                        pending.Count, grace.Period.TotalHours, string.Join(", ", sample),
+                        waitingFolders.Count > sample.Count ? ", ..." : string.Empty);
+                }
+            }
+
+            return due;
+        }
+
+        /// <summary>The URL a .strm holds, trimmed, or null when it cannot be read.</summary>
+        private static string ReadStrmUrl(string path)
+        {
+            try
+            {
+                return File.ReadAllText(path).Trim();
+            }
+            catch (Exception)
+            {
+                return null;
+            }
         }
 
         // ---- Fork-owned delete paths. Moved here from StrmSyncService.cs because upstream's

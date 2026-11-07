@@ -41,6 +41,7 @@ SERVICE_FILES = re.compile(r"^Service/StrmSyncService(\..+)?\.cs$")
 CLEANUP_METHODS = (
     "RemoveExcludedContent",
     "CleanupOrphans",
+    "SelectDueOrphans",
     "BuildWrittenDirectories",
     "RecordExistingStrms",
     "RecordStrms",

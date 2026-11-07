@@ -161,6 +161,15 @@ Orphan cleanup works by difference, so it is only correct when the run saw the w
 
 An empty `get_series_info` payload for a series that already has files on disk is treated as a transient failure: the existing paths are preserved and `Failed` is incremented, which trips the cleanup guard that already exists. This matters because ADR-010's tolerant converters deliberately turn malformed values into empty rather than throwing, so garbage arrives here looking like "no episodes".
 
+**A complete fetch is not proof either.** Dispatcharr moves a merged movie's relations onto
+fresh duplicate rows on every refresh and merges them back over the day, so a movie can be
+missing from a fully successful fetch for hours and return unchanged. Movie cleanup therefore
+deletes a missing file only after `OrphanGracePeriodHours` (default 24), tracked in
+`orphan-grace-movies.json` under the records root, unless the run wrote the same URL at another
+path (a move, deleted at once). Ledger failures only ever delay a deletion; with no records
+root nothing absent is deleted. Series still delete on the first miss. See
+[ADR-C007](docs/decisions/croosso/007-orphan-grace-period.md).
+
 The `existingStrms.Length > 10` gate on the ratio check stays. Removing it means a one-file library has ratio 1.0 and never gets cleaned. The separate `validPaths.Count == 0` guard is what actually closes the data-loss path at small N. See [ADR-013](docs/decisions/013-partial-catalogue-cleanup-guard.md).
 
 ### The sync's delete code lives in its own file for mutation testing

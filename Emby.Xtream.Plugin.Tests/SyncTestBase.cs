@@ -35,6 +35,9 @@ namespace Emby.Xtream.Plugin.Tests
             SmartSkipExisting     = false,
             CleanupOrphans        = false,
             OrphanSafetyThreshold = 0.0,
+            // Immediate deletion, which every cleanup test predating ADR-C007 asserts.
+            // OrphanGracePeriodTests turns it on.
+            OrphanGracePeriodHours = 0,
             StrmNamingVersion     = StrmSyncService.CurrentStrmNamingVersion,
             EpisodeFilenameMigrationVersion = StrmSyncService.CurrentEpisodeFilenameVersion,
             SyncParallelism       = 1,

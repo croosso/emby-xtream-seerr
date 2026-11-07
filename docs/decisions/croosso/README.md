@@ -39,3 +39,4 @@ what it means in theirs.
 | ADR | Title | Status |
 | --- | --- | --- |
 | [ADR-C001](001-decision-store-sidecar.md) | Own the decision stores instead of the configuration blob | Accepted |
+| [ADR-C007](007-orphan-grace-period.md) | A movie missing from the catalogue waits out a grace period before cleanup deletes it | Accepted |
