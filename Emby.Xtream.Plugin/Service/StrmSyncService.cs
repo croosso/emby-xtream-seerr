@@ -2246,7 +2246,8 @@ namespace Emby.Xtream.Plugin.Service
         /// the raw set overstated it (934 reported against 881 real shows on a live run).
         /// </returns>
         internal static int BuildLibraryIdentityIndex(
-            string libraryPath, string rootFolder, HashSet<int> tmdbIds, HashSet<string> folderNames)
+            string libraryPath, string rootFolder, HashSet<int> tmdbIds, HashSet<string> folderNames,
+            Dictionary<string, HashSet<int>> folderNameTmdbIds = null)
         {
             var titleNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var root = Path.Combine(libraryPath, rootFolder);
@@ -2263,6 +2264,8 @@ namespace Emby.Xtream.Plugin.Service
                     continue;
                 }
 
+                // 0 when the folder carries no TMDB id: then its name is all we know about it.
+                var folderTmdb = 0;
                 var match = FolderTmdbIdRegex.Match(leaf);
                 if (match.Success)
                 {
@@ -2271,6 +2274,7 @@ namespace Emby.Xtream.Plugin.Service
                         && id > 0)
                     {
                         tmdbIds.Add(id);
+                        folderTmdb = id;
                     }
                 }
 
@@ -2282,7 +2286,14 @@ namespace Emby.Xtream.Plugin.Service
                     // cleaning rule existed ("4K - Title", "Title [MULTI-SUB]") still exempts the
                     // title it now cleans to (ADR-C009). The user's own remove terms are not
                     // applied: they are configuration, and this index is not.
-                    folderNames.Add(ContentNameCleaner.CleanContentName(stripped));
+                    var cleaned = ContentNameCleaner.CleanContentName(stripped);
+                    folderNames.Add(cleaned);
+                    if (folderNameTmdbIds != null)
+                    {
+                        AddNameTmdb(folderNameTmdbIds, stripped, folderTmdb);
+                        AddNameTmdb(folderNameTmdbIds, cleaned, folderTmdb);
+                    }
+
                     if (!SeasonFolderRegex.IsMatch(stripped))
                     {
                         titleNames.Add(stripped);
@@ -2291,6 +2302,36 @@ namespace Emby.Xtream.Plugin.Service
             }
 
             return titleNames.Count;
+        }
+
+        private static void AddNameTmdb(Dictionary<string, HashSet<int>> map, string name, int tmdb)
+        {
+            HashSet<int> ids;
+            if (!map.TryGetValue(name, out ids))
+            {
+                ids = new HashSet<int>();
+                map[name] = ids;
+            }
+
+            ids.Add(tmdb);
+        }
+
+        /// <summary>
+        /// True when every folder on disk called <paramref name="name"/> carries a TMDB id, and
+        /// none of them is <paramref name="providerTmdb"/>: the name belongs to other titles, so a
+        /// provider title with that name and its own TMDB id is not one the user keeps (ADR-C011).
+        /// A folder without a TMDB id says nothing either way, so its name still counts.
+        /// </summary>
+        internal static bool NameHeldOnlyByOtherTitles(
+            Dictionary<string, HashSet<int>> folderNameTmdbIds, string name, int providerTmdb)
+        {
+            HashSet<int> ids;
+            if (folderNameTmdbIds == null || name == null || !folderNameTmdbIds.TryGetValue(name, out ids))
+            {
+                return false;
+            }
+
+            return !ids.Contains(0) && !ids.Contains(providerTmdb);
         }
 
         internal static Dictionary<string, string> DeserializeEpisodeHashes(string json)
@@ -2631,10 +2672,11 @@ namespace Emby.Xtream.Plugin.Service
                 // from orphan cleanup: anything on disk matches here and syncs normally.
                 var libraryTmdbIds = new HashSet<int>();
                 var libraryFolderNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var libraryFolderNameTmdbIds = new Dictionary<string, HashSet<int>>(StringComparer.OrdinalIgnoreCase);
                 if (reviewGateOn)
                 {
                     var moviesOnDisk = BuildLibraryIdentityIndex(
-                        config.StrmLibraryPath, "Movies", libraryTmdbIds, libraryFolderNames);
+                        config.StrmLibraryPath, "Movies", libraryTmdbIds, libraryFolderNames, libraryFolderNameTmdbIds);
                     _logger.Info(
                         "Review gate on: {0} reviewed movie ids, {1} titles already on disk ({2} with a TMDB id in the folder name)",
                         reviewedVodSet.Count, moviesOnDisk, libraryTmdbIds.Count);
@@ -2752,8 +2794,14 @@ namespace Emby.Xtream.Plugin.Service
                             int providerTmdb = 0;
                             var hasProviderTmdb = IsValidTmdbId(movie.TmdbId)
                                 && int.TryParse(movie.TmdbId.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out providerTmdb);
+                            // The name match is a fallback for folders that carry no TMDB id. When
+                            // both sides do and they disagree, two titles merely share a name:
+                            // "4K - I Swear (2025)" cleaning to the name of a different kept
+                            // "I Swear (2025)" was auto-reviewed that way (ADR-C011).
                             var onDisk = (hasProviderTmdb && libraryTmdbIds.Contains(providerTmdb))
-                                || libraryFolderNames.Contains(movieName);
+                                || (libraryFolderNames.Contains(movieName)
+                                    && !(hasProviderTmdb
+                                         && NameHeldOnlyByOtherTitles(libraryFolderNameTmdbIds, movieName, providerTmdb)));
 
                             // A title the user asked for in Seerr (ADR-C002). Matched on the
                             // provider-supplied TMDB ID only — a held title still costs no

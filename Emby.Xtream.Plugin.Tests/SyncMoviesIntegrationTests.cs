@@ -455,6 +455,59 @@ namespace Emby.Xtream.Plugin.Tests
             Assert.Contains("8", config.ReviewedVodStreamIdsJson);
         }
 
+        /// <summary>
+        /// ADR-C011: "4K - I Swear (2025)" (TMDB 1317149) cleaned to the name of a kept, different
+        /// "I Swear (2025)" (TMDB 1044736) and the gate auto-reviewed it on the name alone. When
+        /// both sides carry a TMDB id and they disagree, the name is not a match.
+        /// </summary>
+        [Fact]
+        public async Task ReviewGate_SameNameDifferentTmdb_IsNotAutoReviewed()
+        {
+            var config = DefaultConfig();
+            config.RequireReviewBeforeSync = true;
+            config.EnableContentNameCleaning = true;
+            config.EnableTmdbFolderNaming = true;
+            config.CleanupOrphans = true;
+            config.ReviewedVodStreamIdsJson = "[1]";
+
+            var kept = MovieStrmPath("Shared Name (2025) [tmdbid=111]");
+            Directory.CreateDirectory(Path.GetDirectoryName(kept));
+            File.WriteAllText(kept, "http://fake-xtream/movie/user/pass/1.mkv");
+
+            RegisterVodStreams(VodStreamsJson(
+                VodStream(streamId: 1, name: "Shared Name (2025)", added: 1000, tmdbId: "111"),
+                VodStream(streamId: 2, name: "4K - Shared Name (2025)", added: 1000, tmdbId: "222")));
+
+            await MakeService().SyncMoviesAsync(config, None, SaveConfig);
+
+            Assert.True(File.Exists(kept), "the title the user keeps is untouched");
+            Assert.False(Directory.Exists(Path.Combine(TempDir.Path, "Movies", "Shared Name (2025) [tmdbid=222]")),
+                "a different title that only shares the name must wait for review");
+            Assert.DoesNotContain("2", config.ReviewedVodStreamIdsJson.Trim('[', ']').Split(','));
+        }
+
+        [Fact]
+        public async Task ReviewGate_NameMatchOnAFolderWithoutTmdb_StillExempts()
+        {
+            // Folder naming was off when the folder was written, so the name is all the gate has.
+            var config = DefaultConfig();
+            config.RequireReviewBeforeSync = true;
+            config.CleanupOrphans = true;
+            config.ReviewedVodStreamIdsJson = "[]";
+
+            var existing = MovieStrmPath("Established Movie");
+            Directory.CreateDirectory(Path.GetDirectoryName(existing));
+            File.WriteAllText(existing, "http://fake-xtream/movie/user/pass/8.mkv");
+
+            RegisterVodStreams(VodStreamsJson(
+                VodStream(streamId: 8, name: "Established Movie", added: 1000, tmdbId: "222")));
+
+            await MakeService().SyncMoviesAsync(config, None, SaveConfig);
+
+            Assert.True(File.Exists(existing));
+            Assert.Contains("8", config.ReviewedVodStreamIdsJson);
+        }
+
         // -----------------------------------------------------------------
         // Review gate — deliberate un-review (ADR-F008)
         // -----------------------------------------------------------------
