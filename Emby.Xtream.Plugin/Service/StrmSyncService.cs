@@ -2577,7 +2577,7 @@ namespace Emby.Xtream.Plugin.Service
                 // Read through the decision store: it is the authoritative copy, and the mirrors
                 // can lag it briefly when a configuration save landed an unreadable value (ADR-C001).
                 var excludedVodSet = GetDecisionStore(config).Read(config).ExcludedVodStreamIds;
-                var excludedMovies = new List<Tuple<string, int?>>();
+                var excludedMovies = new List<ExcludedItem>();
                 var allStreams = fetchedStreams;
                 if (excludedVodSet.Count > 0)
                 {
@@ -2589,7 +2589,7 @@ namespace Emby.Xtream.Plugin.Service
                             var excludedName = config.EnableContentNameCleaning
                                 ? ContentNameCleaner.CleanContentName(s.Name, config.ContentRemoveTerms)
                                 : s.Name;
-                            excludedMovies.Add(Tuple.Create(excludedName, s.CategoryId));
+                            excludedMovies.Add(new ExcludedItem(excludedName, s.CategoryId, ProviderTmdbId(s.TmdbId)));
                         }
                         else
                         {
@@ -2686,7 +2686,7 @@ namespace Emby.Xtream.Plugin.Service
                 var autoReviewed = new List<Tuple<int, string>>();
                 // Titles held because the user deliberately un-reviewed them (ADR-F008), kept in
                 // the same shape as excludedMovies so the removal pass below can consume them.
-                var unreviewedMovies = new List<Tuple<string, int?>>();
+                var unreviewedMovies = new List<ExcludedItem>();
                 // A sample of what was held. The gate's whole effect is content NOT appearing,
                 // so a bare count gives no way to tell "held the 5,000 new titles" from "held
                 // your entire library because the identity index came up empty".
@@ -2783,7 +2783,7 @@ namespace Emby.Xtream.Plugin.Service
                                 }
                                 lock (unreviewedMovies)
                                 {
-                                    unreviewedMovies.Add(Tuple.Create(cleanedName, movie.CategoryId));
+                                    unreviewedMovies.Add(new ExcludedItem(cleanedName, movie.CategoryId, ProviderTmdbId(movie.TmdbId)));
                                 }
                                 Interlocked.Increment(ref _movieProgress.Skipped);
                                 Interlocked.Increment(ref _movieProgress.Completed);
@@ -2986,7 +2986,7 @@ namespace Emby.Xtream.Plugin.Service
                             config, unreviewedMovies, config.MovieFolderMode, categoryNames, folderMappings, "Movies",
                             writtenPaths);
                         var removedSample = unreviewedMovies
-                            .Select(m => m.Item1)
+                            .Select(m => m.Name)
                             .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
                             .Take(HeldSampleSize)
                             .ToList();
@@ -3247,7 +3247,7 @@ namespace Emby.Xtream.Plugin.Service
                     }
                 }
 
-                var excludedSeriesItems = new List<Tuple<string, int?>>();
+                var excludedSeriesItems = new List<ExcludedItem>();
                 var excludedSeriesRaw = new List<SeriesInfo>();
                 var allSeries = fetchedSeries;
                 if (excludedSeriesSet.Count > 0)
@@ -3270,7 +3270,7 @@ namespace Emby.Xtream.Plugin.Service
                             var excludedName = config.EnableContentNameCleaning
                                 ? ContentNameCleaner.CleanContentName(s.Name, config.ContentRemoveTerms)
                                 : s.Name;
-                            excludedSeriesItems.Add(Tuple.Create(excludedName, s.CategoryId));
+                            excludedSeriesItems.Add(new ExcludedItem(excludedName, s.CategoryId));
                             excludedSeriesRaw.Add(s);
                         }
                         else
@@ -3511,7 +3511,7 @@ namespace Emby.Xtream.Plugin.Service
                 var heldTitles = new List<string>();
                 // Shows held because the user deliberately un-reviewed them (ADR-F008), in the
                 // same shape as excludedSeriesItems for the removal pass below.
-                var unreviewedSeriesItems = new List<Tuple<string, int?>>();
+                var unreviewedSeriesItems = new List<ExcludedItem>();
                 // Recorded by the gate itself rather than recomputed afterwards, so the two can
                 // never disagree about what was held. Used to exempt held series from the
                 // no-episode-hash diagnostic below: they have no hash because they were
@@ -3652,7 +3652,7 @@ namespace Emby.Xtream.Plugin.Service
                                 lock (heldIds) { heldIds.Add(series.SeriesId); }
                                 lock (unreviewedSeriesItems)
                                 {
-                                    unreviewedSeriesItems.Add(Tuple.Create(cleanedName, series.CategoryId));
+                                    unreviewedSeriesItems.Add(new ExcludedItem(cleanedName, series.CategoryId));
                                 }
                                 Interlocked.Increment(ref _seriesProgress.Skipped);
                                 Interlocked.Increment(ref _seriesProgress.Completed);
@@ -4103,7 +4103,7 @@ namespace Emby.Xtream.Plugin.Service
                             config, unreviewedSeriesItems, config.SeriesFolderMode, categoryNames, folderMappings, "Shows",
                             writtenPaths);
                         var removedSample = unreviewedSeriesItems
-                            .Select(s => s.Item1)
+                            .Select(s => s.Name)
                             .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
                             .Take(HeldSampleSize)
                             .ToList();
@@ -4877,6 +4877,16 @@ namespace Emby.Xtream.Plugin.Service
             }
 
             return sanitized;
+        }
+
+        /// <summary>The provider's TMDB id as a number, or null when it gave none or an invalid one.</summary>
+        private static int? ProviderTmdbId(string tmdbId)
+        {
+            int id;
+            return IsValidTmdbId(tmdbId)
+                && int.TryParse(tmdbId.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out id)
+                ? id
+                : (int?)null;
         }
 
         private static bool IsValidTmdbId(string tmdbId)

@@ -155,6 +155,11 @@ Ownership is decided by file content, not by extension or a manifest — see `St
 
 All three delete paths go through this — orphan cleanup, per-item exclusion, and the "delete all content" button. A user's own `Ben-Hur` survives excluding the provider's `Ben-Hur`, and so does a `trailer.strm` or hand-written `.nfo` sitting in a folder alongside plugin output. Everything fails safe: unreadable, empty or non-matching means foreign means kept.
 
+**Every folder with the name, and their TMDB ids.** Two titles can share a stripped folder name
+(`Title [tmdbid=A]`, `Title [tmdbid=B]`). The pass considers every such folder, and skips one
+tagged with a TMDB id other than the excluded item's own. See
+[ADR-C013](docs/decisions/croosso/013-exclusion-sees-every-same-name-folder.md).
+
 **Never delete a folder the current run wrote into.** Exclusion is by stream ID but the folder match is by cleaned name, ignoring case, so a kept twin ("Twin Title" vs "twin title") shares the excluded one's folder. `RemoveExcludedContent` takes `writtenPaths` and skips those folders. The pass is postponed when a category fails to load; a failed item instead records its existing files in `writtenPaths` from its catch block, because gating on item failures would block exclusions for as long as the item stays failed. See [ADR-018](docs/decisions/018-exclusion-never-deletes-what-the-sync-wrote.md).
 
 Both sync methods compute their delta watermark from the **unfiltered** catalogue — if the newest title happens to be excluded, the watermark must still advance past it or every later sync re-processes everything after it. Re-ticking a title needs no watermark reset: both smart-skip paths already guard on the folder existing. See [ADR-012](docs/decisions/012-per-item-content-exclusion.md).
