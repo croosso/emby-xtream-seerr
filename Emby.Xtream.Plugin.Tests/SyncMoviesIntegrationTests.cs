@@ -425,6 +425,36 @@ namespace Emby.Xtream.Plugin.Tests
             Assert.Equal(0, svc.MovieProgress.Failed);
         }
 
+        /// <summary>
+        /// ADR-C009: the cleaner learned to strip "4K - ". A title on disk under its old folder
+        /// whose provider id was never reviewed must still be recognised by the gate, written
+        /// under its clean name, and its old folder cleaned up as a move.
+        /// </summary>
+        [Fact]
+        public async Task ReviewGate_FolderWrittenBeforeACleaningRule_IsRecognisedAndRenamed()
+        {
+            var config = DefaultConfig();
+            config.RequireReviewBeforeSync = true;
+            config.EnableContentNameCleaning = true;
+            config.CleanupOrphans = true;
+            config.ReviewedVodStreamIdsJson = "[]";
+
+            var old = MovieStrmPath("4K - Established Movie (2025)");
+            Directory.CreateDirectory(Path.GetDirectoryName(old));
+            File.WriteAllText(old, "http://fake-xtream/movie/user/pass/8.mkv");
+
+            RegisterVodStreams(VodStreamsJson(
+                VodStream(streamId: 8, name: "4K - Established Movie (2025)", added: 1000)));
+
+            var svc = MakeService();
+            await svc.SyncMoviesAsync(config, None, SaveConfig);
+
+            Assert.True(File.Exists(MovieStrmPath("Established Movie (2025)")),
+                "the on-disk title must not be held just because its folder predates the rule");
+            Assert.False(File.Exists(old), "the old folder holds the same URL, so it was moved, not lost");
+            Assert.Contains("8", config.ReviewedVodStreamIdsJson);
+        }
+
         // -----------------------------------------------------------------
         // Review gate — deliberate un-review (ADR-F008)
         // -----------------------------------------------------------------

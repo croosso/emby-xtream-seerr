@@ -144,5 +144,27 @@ namespace Emby.Xtream.Plugin.Tests
                 Assert.Empty(tmdbIds);
             }
         }
+
+        [Fact]
+        public void IndexesAFolderUnderTheNameTheCleanerGivesItToday()
+        {
+            // A folder written before a cleaning rule existed must still exempt the title it now
+            // cleans to, or the gate holds an established title the day the rule ships (ADR-C009).
+            using (var temp = new TempDirectory())
+            {
+                Directory.CreateDirectory(Path.Combine(temp.Path, "Movies", "4K - Some Film (2025)"));
+                Directory.CreateDirectory(Path.Combine(temp.Path, "Movies", "Other Film [MULTI-SUB]"));
+
+                HashSet<int> tmdbIds;
+                HashSet<string> folderNames;
+                var count = Index(temp.Path, "Movies", out tmdbIds, out folderNames);
+
+                Assert.Equal(2, count);
+                Assert.Contains("4K - Some Film (2025)", folderNames);
+                Assert.Contains("Some Film (2025)", folderNames);
+                Assert.Contains("Other Film [MULTI-SUB]", folderNames);
+                Assert.Contains("Other Film", folderNames);
+            }
+        }
     }
 }
