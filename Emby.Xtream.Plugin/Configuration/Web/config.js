@@ -723,6 +723,7 @@ function (BaseView, loading) {
             view.querySelector('.txtXtreamRequestsPerSecond').value = config.XtreamRequestsPerSecond || 0;
             view.querySelector('.chkCleanupOrphans').checked = !!config.CleanupOrphans;
             view.querySelector('.txtOrphanSafetyThreshold').value = Math.round((config.OrphanSafetyThreshold != null ? config.OrphanSafetyThreshold : 0.20) * 100);
+            view.querySelector('.txtOrphanGracePeriodHours').value = config.OrphanGracePeriodHours != null ? config.OrphanGracePeriodHours : 24;
             view.querySelector('.txtRecordsPath').value = config.RecordsPath || '';
             view.querySelector('.txtWantedSetPath').value = config.WantedSetPath || '';
             view.querySelector('.txtConfigBackupCount').value = config.ConfigBackupCount != null ? config.ConfigBackupCount : 10;
@@ -872,6 +873,9 @@ function (BaseView, loading) {
             config.XtreamRequestsPerSecond = parseInt(view.querySelector('.txtXtreamRequestsPerSecond').value, 10) || 0;
             config.CleanupOrphans = view.querySelector('.chkCleanupOrphans').checked;
             config.OrphanSafetyThreshold = (parseInt(view.querySelector('.txtOrphanSafetyThreshold').value, 10) || 0) / 100;
+            // A blank field keeps the default rather than reading as 0, which would turn the grace period off.
+            var graceHours = parseInt(view.querySelector('.txtOrphanGracePeriodHours').value, 10);
+            config.OrphanGracePeriodHours = isNaN(graceHours) ? 24 : Math.max(0, graceHours);
             config.RecordsPath = view.querySelector('.txtRecordsPath').value.replace(/\/+$/, '');
             // Trailing slashes stripped the same way: the plugin appends a filename to this, and
             // a blank value is the documented way to publish nothing.

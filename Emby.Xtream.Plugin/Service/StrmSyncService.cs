@@ -251,6 +251,9 @@ namespace Emby.Xtream.Plugin.Service
         // production.
         internal Action<string> LibraryChangedNotifier { get; set; }
 
+        // The clock orphan cleanup measures grace periods against (ADR-C007); tests move it.
+        internal Func<DateTime> UtcNow { get; set; } = () => DateTime.UtcNow;
+
         /// <summary>
         /// Where the full deleted-path record is written when a cleanup removes more than the
         /// logged sample (ADR-F005). Null means "ask Emby for its log directory", which is what
@@ -279,6 +282,9 @@ namespace Emby.Xtream.Plugin.Service
 
         /// <summary>One root for every durable record the plugin keeps — see ADR-F005 mechanism 8.</summary>
         internal const string RecordsRootName = "xtream-backups";
+
+        /// <summary>When each missing movie file was first seen missing (ADR-C007), under the records root.</summary>
+        internal const string OrphanGraceLedgerFileName = "orphan-grace-movies.json";
 
         /// <summary>
         /// Pre-write rollback copies. A sibling of <see cref="RecordsRootName"/> rather than a
@@ -2643,6 +2649,8 @@ namespace Emby.Xtream.Plugin.Service
                 _logger.Info("Starting movie STRM sync for {0} streams", allStreams.Count);
 
                 var writtenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                // What those paths hold, so cleanup can tell a moved title from a missing one.
+                var writtenUrls = new HashSet<string>(StringComparer.Ordinal);
 
                 // The wanted set (ADR-F009): every title this run keeps on disk, paired with
                 // whatever TMDB id had been resolved for it by that point. Collected
@@ -2682,6 +2690,7 @@ namespace Emby.Xtream.Plugin.Service
                     CategoryNames = categoryNames,
                     FolderMappings = folderMappings,
                     WrittenPaths = writtenPaths,
+                    WrittenUrls = writtenUrls,
                     DispatcharrVodClient = dispatcharrVodClient,
                     LastMovieTimestamp = lastMovieTs,
                     WantedCapture = (wantedMovie, wantedTmdbId) =>
@@ -2948,7 +2957,18 @@ namespace Emby.Xtream.Plugin.Service
                 {
                     _movieProgress.Phase = "Cleaning up orphaned files";
                     var moviesRoot = Path.Combine(config.StrmLibraryPath, "Movies");
-                    _movieProgress.Deleted += CleanupOrphans(moviesRoot, writtenPaths, config.OrphanSafetyThreshold, config);
+                    var recordsRoot = ResolveRecordsRoot(config);
+                    var grace = new OrphanGrace
+                    {
+                        Period = TimeSpan.FromHours(Math.Max(0, config.OrphanGracePeriodHours)),
+                        LedgerPath = string.IsNullOrEmpty(recordsRoot)
+                            ? null
+                            : Path.Combine(recordsRoot, OrphanGraceLedgerFileName),
+                        NowUtc = UtcNow(),
+                        WrittenUrls = writtenUrls,
+                    };
+                    _movieProgress.Deleted += CleanupOrphans(
+                        moviesRoot, writtenPaths, config.OrphanSafetyThreshold, config, grace);
                 }
 
                 // Persist the highest Added timestamp seen so next sync can delta from here.
@@ -4311,6 +4331,8 @@ namespace Emby.Xtream.Plugin.Service
             public Dictionary<int, string> CategoryNames;
             public Dictionary<int, string> FolderMappings;
             public HashSet<string> WrittenPaths;
+            /// <summary>URLs of the entries written or found up to date (ADR-C007). Optional.</summary>
+            public HashSet<string> WrittenUrls;
             public Emby.Xtream.Plugin.Client.DispatcharrClient DispatcharrVodClient;
             /// <summary>0 treats every movie as new, so smart skip never applies (the retry passes 0).</summary>
             public long LastMovieTimestamp;
@@ -4494,6 +4516,10 @@ namespace Emby.Xtream.Plugin.Service
                     }
                 }
                 lock (writtenPaths) { writtenPaths.Add(itemPath); }
+                if (ctx.WrittenUrls != null)
+                {
+                    lock (ctx.WrittenUrls) { ctx.WrittenUrls.Add(itemUrl); }
+                }
             }
             result.AddedNewFile = isAnyNewFile;
 

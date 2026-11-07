@@ -537,6 +537,15 @@
                         <div class="fieldDescription">
                             Skip cleanup if more than this % of files would be deleted (protects against provider outages). Set 0 to disable.
                         </div>
+                        <input class="txtOrphanGracePeriodHours" type="number" is="emby-input"
+                               label="Grace Period (hours)" min="0" step="1" />
+                        <div class="fieldDescription">
+                            Keep a movie's files until it has been missing from the source for this long. Dispatcharr can
+                            hide a movie for a few hours while it refreshes and merges providers; without a grace period
+                            each of those syncs deletes the movie and the next one adds it back. A movie that moved to a
+                            new folder is still cleaned up straight away. Default 24. Set 0 to delete on the first sync
+                            that misses it.
+                        </div>
                     </div>
 
                     <div class="checkboxContainer checkboxContainer-withDescription" style="margin-top:0.5em;">

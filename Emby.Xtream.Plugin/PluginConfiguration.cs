@@ -338,6 +338,12 @@ namespace Emby.Xtream.Plugin
         /// <summary>Fraction of existing STRMs that can be deleted in one cleanup pass. 0 = disabled.</summary>
         public double OrphanSafetyThreshold { get; set; } = 0.20;
 
+        /// <summary>
+        /// Hours a movie must be missing from the catalogue before orphan cleanup deletes its
+        /// files (ADR-C007). 0 = delete on the first sync that misses it.
+        /// </summary>
+        public int OrphanGracePeriodHours { get; set; } = 24;
+
         // Auto-sync schedule
         public bool   AutoSyncEnabled       { get; set; } = false;
         public string AutoSyncMode          { get; set; } = "interval"; // "interval" | "daily"
