@@ -19,8 +19,8 @@ movie's provider relations and writes one `.strm` per relation: `Title.strm`,
 A relation is unique per (M3U account, stream id), not per stream id. Two M3U accounts on
 the same upstream provider (two logins, typically to get more connections) each carry a
 relation for the same stream, with the same `stream_id`. On a live setup with two such
-accounts, `4K - Eternity (2025)` had 11 relations and 7 distinct stream ids, so 4 of its
-11 version files were copies of another one.
+accounts, one movie had 11 relations and 7 distinct stream ids, so 4 of its 11 version
+files were copies of another one.
 
 ## Problem
 

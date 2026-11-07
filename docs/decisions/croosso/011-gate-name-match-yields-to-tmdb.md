@@ -23,12 +23,11 @@ different TMDB title.
 
 ## Problem
 
-ADR-C009 made `4K - I Swear (2025)` (Dispatcharr movie 75459, TMDB 1317149) clean to
-`I Swear (2025)`, the name of a different movie the user keeps (76989, TMDB 1044736, folder
-`I Swear (2025) [tmdbid=1044736]`). On the first sync after it shipped, the gate matched the
-name, logged "1 title you already keep came back under a new StreamId — I Swear (2025)",
-auto-reviewed 75459 and wrote a second `I Swear (2025) [tmdbid=1317149]` folder with six
-versions. The user never reviewed that title.
+ADR-C009 made `4K - Some Film (2025)` (TMDB id A) clean to `Some Film (2025)`, the name of a
+different movie the user keeps (TMDB id B, folder `Some Film (2025) [tmdbid=B]`). On the first
+sync after it shipped, the gate matched the name, logged "1 title you already keep came back
+under a new StreamId — Some Film (2025)", auto-reviewed the new id and wrote a second
+`Some Film (2025) [tmdbid=A]` folder with six versions. The user never reviewed that title.
 
 Any widening of the cleaner can do this, and so can two films that simply share a title and
 year.
@@ -62,8 +61,8 @@ Series are unchanged: the series list carries no TMDB id, so a conflict cannot b
 
 - Same-name titles with different TMDB ids are no longer auto-reviewed; they wait in the
   review queue.
-- Decisions already made are not undone. On the library that prompted this, 75459 stays
-  reviewed until the user un-reviews or excludes it in the de-dup view.
+- Decisions already made are not undone. On the library that prompted this, the wrongly
+  auto-reviewed title stays reviewed until the user un-reviews or excludes it.
 - If a provider re-issues a stream id **and** changes the title's TMDB id at the same time, the
   new id is held instead of auto-reviewed, and the old folder (no longer written) is cleaned up
   after the grace period (ADR-C007). The title shows up in the review queue, which is where a

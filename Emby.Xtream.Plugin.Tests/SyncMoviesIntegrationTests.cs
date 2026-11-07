@@ -456,8 +456,8 @@ namespace Emby.Xtream.Plugin.Tests
         }
 
         /// <summary>
-        /// ADR-C011: "4K - I Swear (2025)" (TMDB 1317149) cleaned to the name of a kept, different
-        /// "I Swear (2025)" (TMDB 1044736) and the gate auto-reviewed it on the name alone. When
+        /// ADR-C011: "4K - Some Film (2025)" (TMDB id A) cleaned to the name of a kept, different
+        /// "Some Film (2025)" (TMDB id B) and the gate auto-reviewed it on the name alone. When
         /// both sides carry a TMDB id and they disagree, the name is not a match.
         /// </summary>
         [Fact]

@@ -68,16 +68,16 @@ namespace Emby.Xtream.Plugin.Tests
         {
             var config = GraceConfig();
             Catalogue(1, VodStream(streamId: 1, name: "Kept Movie"));
-            var main = Seed("Eternity (2025)", XtreamUrl(99));
-            var version = Seed("Eternity (2025)", "http://fake-dispatcharr/proxy/vod/movie/abc?stream_id=7",
-                "Eternity (2025) - Version 2");
+            var main = Seed("Some Film (2025)", XtreamUrl(99));
+            var version = Seed("Some Film (2025)", "http://fake-dispatcharr/proxy/vod/movie/abc?stream_id=7",
+                "Some Film (2025) - Version 2");
 
             await SyncAt(config, T0);
 
             Assert.True(File.Exists(main), "one sync without the title is not proof it is gone");
             Assert.True(File.Exists(version), "its Dispatcharr version entries wait with it");
             var ledger = File.ReadAllText(LedgerPath);
-            Assert.Contains("Eternity (2025) - Version 2.strm", ledger);
+            Assert.Contains("Some Film (2025) - Version 2.strm", ledger);
             Assert.Contains("2026-11-06T05:42:00Z", ledger);
         }
 

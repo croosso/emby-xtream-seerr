@@ -19,29 +19,29 @@ that safe against a fetch that *failed*: a category that errors trips
 *succeeded* lists every title the provider still has.
 
 With Dispatcharr in front of several providers that assumption does not hold. Observed on a
-live setup (Dispatcharr 0.31 with the VOD Manager and vod-probe plugins, four M3U accounts):
+live setup (Dispatcharr 0.31 with the VOD Manager and vod-probe plugins, several M3U accounts):
 
 - The nightly M3U refresh (00:30) gives providers that ship titles without a TMDB id fresh
-  duplicate movie rows, under raw names (`EN| Eternity`, a new id every night), and moves
+  duplicate movie rows, under raw names (`EN| Some Film`, a new id every night), and moves
   their relations off the merged movie onto those rows.
 - vod-probe (01:00 onward, in batches) resolves the TMDB ids and merges the duplicates back.
-  The catalogue shrinks from about 46k to 31k titles over the day.
+  The catalogue shrinks by about a third over the day.
 - VOD Manager (10:00) deletes the relations it rejects. The next refresh brings them back,
-  except when that refresh aborts, which it did for one account on 2026-11-06.
+  except when that refresh aborts, which it did for one account during the investigation.
 - The Xtream feed lists a movie in a category only while one of its relations sits there,
   and the plugin reads only the selected categories.
 
 So a merged, multi-provider movie (exactly the ones with Dispatcharr version entries) is
 regularly invisible for several hours, with the same id and name before and after. The
-plugin's daily catalogue snapshots showed `4K - Eternity (2025)` as id 75469 every night
-from 10-28 to 11-05 and missing on 11-06; the snapshot is written from the unfiltered fetch.
+plugin's daily catalogue snapshots showed one such movie under the same id and name every
+night for a week and missing on the next; the snapshot is written from the unfiltered fetch.
 
 ## Problem
 
 Every sync that ran inside such a window deleted the movie, and the first sync after it
-wrote it again. Between 11-03 and 11-06 cleanup removed the files of every multi-version
-movie in the library five times (22, 39, 53, 53 files and a few singles). A title whose
-relations never came back to a selected category (`Hope (SUBS) (2026)`) stayed deleted.
+wrote it again. Over four days cleanup removed the files of every multi-version movie in
+the library five times. A title whose relations never came back to a selected category
+stayed deleted.
 Each round trip also costs the Emby items their watched state and metadata.
 
 Nothing in the fetch distinguishes this from a real removal: the response is well formed,

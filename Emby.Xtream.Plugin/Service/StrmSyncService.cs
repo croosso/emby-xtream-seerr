@@ -2796,8 +2796,8 @@ namespace Emby.Xtream.Plugin.Service
                                 && int.TryParse(movie.TmdbId.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out providerTmdb);
                             // The name match is a fallback for folders that carry no TMDB id. When
                             // both sides do and they disagree, two titles merely share a name:
-                            // "4K - I Swear (2025)" cleaning to the name of a different kept
-                            // "I Swear (2025)" was auto-reviewed that way (ADR-C011).
+                            // "4K - Some Film (2025)" cleaning to the name of a different kept
+                            // "Some Film (2025)" was auto-reviewed that way (ADR-C011).
                             var onDisk = (hasProviderTmdb && libraryTmdbIds.Contains(providerTmdb))
                                 || (libraryFolderNames.Contains(movieName)
                                     && !(hasProviderTmdb

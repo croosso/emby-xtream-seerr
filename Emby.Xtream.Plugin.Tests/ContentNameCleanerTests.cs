@@ -128,16 +128,16 @@ namespace Emby.Xtream.Plugin.Tests
 
         // ADR-C009: a label that starts with a resolution token is a quality tag, not a title.
         // These used to be preserved, so the folder kept "4K - " and Emby's metadata lookup
-        // searched TMDB for "4K - Eternity" and found nothing.
+        // searched TMDB for "4K - Some Film" and found nothing.
         [Theory]
-        [InlineData("4K - Eternity (2025)", "Eternity (2025)")]
+        [InlineData("4K - Some Film (2025)", "Some Film (2025)")]
         [InlineData("8K - Planet Earth", "Planet Earth")]
         [InlineData("UHD - Dune", "Dune")]
         [InlineData("FHD - The Crown", "The Crown")]
         [InlineData("HD - Heat", "Heat")]
         [InlineData("4K-NF - Arcane", "Arcane")]
-        [InlineData("4K-AMZ - Reacher", "Reacher")]
-        [InlineData("4K-FR-HDR - Lupin", "Lupin")]
+        [InlineData("4K-AMZ - Night Train", "Night Train")]
+        [InlineData("4K-FR-HDR - Blue Harbor", "Blue Harbor")]
         [InlineData("4K-D+ - Andor", "Andor")]
         [InlineData("4K-A+ - Severance", "Severance")]
         public void RemovesQualityLabelDashPrefix(string input, string expected)
@@ -150,8 +150,8 @@ namespace Emby.Xtream.Plugin.Tests
         [InlineData("CSI - Vegas")]          // 3-letter acronym — preserved
         [InlineData("NCIS - Los Angeles")]   // 4-letter acronym — preserved
         [InlineData("4KIDS - Pokemon")]      // starts with a resolution token but is a longer word
-        [InlineData("4K-Eternity")]          // no " - " separator, so not a prefix label
-        [InlineData("4k - Eternity")]        // lowercase — not matched, like country codes
+        [InlineData("4K-Some Film")]          // no " - " separator, so not a prefix label
+        [InlineData("4k - Some Film")]        // lowercase — not matched, like country codes
         [InlineData("A - Show")]             // single char — too short
         [InlineData("The - Show")]           // lowercase — not matched
         public void PreservesNonCountryCodeDashPatterns(string input)

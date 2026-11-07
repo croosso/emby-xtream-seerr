@@ -16,9 +16,9 @@ deliberately withdrawn (its ids in the un-review tombstone stores, ADR-F008). Th
 review toggle keeps the two exclusive: un-reviewing removes the reviewed mark and adds the
 tombstone, re-reviewing does the opposite.
 
-Nothing else enforced it. On a live library, movie id `75469` (`4K - Eternity (2025)`) sat in
-both stores. The record shows how: reviewed on 10-30; on 11-05 at 20:13 a phone browser sent
-two configuration saves 0.8 s apart and a movie sync, and from then on the id was in both.
+Nothing else enforced it. On a live library, one kept movie's id sat in both stores. The
+record shows how: it was reviewed first; later a phone browser sent two configuration saves
+0.8 s apart and a movie sync, and from then on the id was in both.
 
 ## Problem
 
@@ -75,8 +75,8 @@ set while the page holds it in the other: the page's own state is the user's lat
 - An id can no longer be both kept and withdrawn; the de-dup view, the gate and the
   tombstone pass agree.
 - On upgrade, existing overlaps resolve to reviewed on the first movie sync, logged as a
-  warning listing the ids. On the library that prompted this, `75469` (Eternity) keeps its
-  files; un-reviewing it again in the de-dup view now sticks.
+  warning listing the ids. On the library that prompted this, the movie keeps its files;
+  un-reviewing it again in the de-dup view now sticks.
 - A page left open while another device changes a decision still wins on save, as any web
   form does (already documented on `RouteDecisionStoreWrites`); what changes is that it can
   no longer write a contradiction.
