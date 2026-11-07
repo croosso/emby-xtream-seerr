@@ -351,6 +351,127 @@ namespace Emby.Xtream.Plugin.Tests
         // The routing from a configuration save (Plugin.UpdateConfiguration path)
         // -----------------------------------------------------------------
 
+        // -----------------------------------------------------------------
+        // Reviewed and un-reviewed are disjoint (ADR-C010)
+        // -----------------------------------------------------------------
+
+        private static DecisionState ReplaceWith(
+            TempDirectory dir, string reviewedBefore, string unreviewedBefore,
+            string reviewedSaved, string unreviewedSaved, ILogger logger = null)
+        {
+            var config = ConfigWith(reviewedVod: reviewedBefore);
+            config.UnreviewedVodStreamIdsJson = unreviewedBefore;
+            var store = DecisionStore.GetOrCreate(dir.Path, logger ?? new NullLogger());
+            store.Read(config);
+
+            var incoming = ConfigWith(reviewedVod: reviewedSaved);
+            incoming.UnreviewedVodStreamIdsJson = unreviewedSaved;
+            store.Replace(config, incoming);
+            return store.Read(config);
+        }
+
+        [Fact]
+        public void Replace_SaveThatUnreviews_WithTheOldReviewedMarkMergedBackIn_KeepsTheUnreview()
+        {
+            // The page un-reviewed 5, then reloaded the de-dup view before saving, which merged
+            // the server's old reviewed mark back in. The save carries 5 in both stores; the
+            // tombstone is what this save added, so it is the user's decision.
+            using (var dir = new TempDirectory())
+            {
+                var state = ReplaceWith(dir, "[5,6]", "[]", "[5,6]", "[5]");
+
+                Assert.Equal(new HashSet<int> { 6 }, state.ReviewedVodStreamIds);
+                Assert.Equal(new HashSet<int> { 5 }, state.UnreviewedVodStreamIds);
+            }
+        }
+
+        [Fact]
+        public void Replace_SaveThatReReviews_WithTheOldTombstoneMergedBackIn_KeepsTheReview()
+        {
+            using (var dir = new TempDirectory())
+            {
+                var state = ReplaceWith(dir, "[]", "[5]", "[5]", "[5]");
+
+                Assert.Equal(new HashSet<int> { 5 }, state.ReviewedVodStreamIds);
+                Assert.Empty(state.UnreviewedVodStreamIds);
+            }
+        }
+
+        [Fact]
+        public void Replace_SaveThatAddsAnIdToBothStores_KeepsItReviewed()
+        {
+            // No way to tell which is newer, so it lands where the review gate already puts it.
+            using (var dir = new TempDirectory())
+            {
+                var state = ReplaceWith(dir, "[]", "[]", "[5]", "[5]");
+
+                Assert.Equal(new HashSet<int> { 5 }, state.ReviewedVodStreamIds);
+                Assert.Empty(state.UnreviewedVodStreamIds);
+            }
+        }
+
+        [Fact]
+        public void Replace_SeriesStoresAreSettledTheSameWay()
+        {
+            using (var dir = new TempDirectory())
+            {
+                var config = ConfigWith(reviewedSeries: "[7]");
+                var store = DecisionStore.GetOrCreate(dir.Path, new NullLogger());
+                store.Read(config);
+
+                var incoming = ConfigWith(reviewedSeries: "[7]");
+                incoming.UnreviewedSeriesIdsJson = "[7]";
+                store.Replace(config, incoming);
+
+                var state = store.Read(config);
+                Assert.Empty(state.ReviewedSeriesIds);
+                Assert.Equal(new HashSet<int> { 7 }, state.UnreviewedSeriesIds);
+            }
+        }
+
+        [Fact]
+        public void AnyWrite_HealsAnOverlapAlreadyInTheStore_ToReviewed()
+        {
+            // A store written before ADR-C010 can hold an id in both. The sync already treats it
+            // as reviewed, so the next write keeps it that way, says so, and the restarted
+            // process reads it healed.
+            using (var dir = new TempDirectory())
+            {
+                var logger = new RecordingLogger();
+                var config = ConfigWith(reviewedVod: "[5,6]");
+                config.UnreviewedVodStreamIdsJson = "[5,9]";
+                var store = DecisionStore.GetOrCreate(dir.Path, logger);
+
+                store.AddReviewed(config, false, new int[0]);
+
+                var state = store.Read(config);
+                Assert.Equal(new HashSet<int> { 5, 6 }, state.ReviewedVodStreamIds);
+                Assert.Equal(new HashSet<int> { 9 }, state.UnreviewedVodStreamIds);
+                Assert.Equal("[9]", config.UnreviewedVodStreamIdsJson);
+                Assert.Contains(logger.Warnings, w => w.Contains("[5]"));
+
+                var fresh = DecisionStore.CreateUnsharedForTests(dir.Path, new NullLogger()).Read(config);
+                Assert.Equal(new HashSet<int> { 9 }, fresh.UnreviewedVodStreamIds);
+            }
+        }
+
+        [Fact]
+        public void AnyWrite_LeavesAnUnreadableStoreAlone()
+        {
+            using (var dir = new TempDirectory())
+            {
+                var config = ConfigWith(reviewedVod: "{not-json");
+                config.UnreviewedVodStreamIdsJson = "[5]";
+                var store = DecisionStore.GetOrCreate(dir.Path, new NullLogger());
+
+                store.AddReviewed(config, true, new[] { 1 });
+
+                var state = store.Read(config);
+                Assert.Null(state.ReviewedVodStreamIds);
+                Assert.Equal(new HashSet<int> { 5 }, state.UnreviewedVodStreamIds);
+            }
+        }
+
         [Fact]
         public void RouteDecisionStoreWrites_EqualStores_DoNotCreateStoreFile()
         {

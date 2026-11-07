@@ -2140,8 +2140,10 @@ function updateEpgVisibility(view) {
     // not yet saved. Deliberately does not touch the exclusion list, which the sync never
     // writes — re-reading that would silently discard pending exclusion edits.
     //
-    // Accepted edge: un-reviewing a title here and then pressing Load, without saving in
-    // between, re-marks it reviewed.
+    // An id is never merged into one set while the page holds it in the other (ADR-C010).
+    // Un-reviewing a title and pressing Load before saving used to union the server's old
+    // reviewed mark back in beside the new tombstone, and the next save stored the id as both.
+    // The page's own state is the user's latest decision, so it wins.
     function mergeServerReviewed(instance, cfg, freshConfig) {
         if (!freshConfig || !cfg.reviewedJsonKey) return;
         var serverSet = parseReviewedSet(freshConfig[cfg.reviewedJsonKey]);
@@ -2152,7 +2154,10 @@ function updateEpgVisibility(view) {
         if (serverSet === null) return;
         if (!instance[cfg.reviewedKey]) instance[cfg.reviewedKey] = {};
         var local = instance[cfg.reviewedKey];
-        Object.keys(serverSet).forEach(function (id) { local[id] = true; });
+        var localTombstones = cfg.unreviewedKey ? (instance[cfg.unreviewedKey] || {}) : {};
+        Object.keys(serverSet).forEach(function (id) {
+            if (!localTombstones[id]) local[id] = true;
+        });
 
         // The tombstones merge the same way (ADR-F008): the sync's identity pass can carry
         // them onto re-issued ids server-side, and dropping those on Load would let the
@@ -2161,8 +2166,10 @@ function updateEpgVisibility(view) {
         var serverTombstones = parseReviewedSet(freshConfig[cfg.unreviewedJsonKey]);
         if (serverTombstones === null) return;
         if (!instance[cfg.unreviewedKey]) instance[cfg.unreviewedKey] = {};
-        var localTombstones = instance[cfg.unreviewedKey];
-        Object.keys(serverTombstones).forEach(function (id) { localTombstones[id] = true; });
+        localTombstones = instance[cfg.unreviewedKey];
+        Object.keys(serverTombstones).forEach(function (id) {
+            if (!local[id]) localTombstones[id] = true;
+        });
     }
 
     function loadDeduped(instance, type) {
