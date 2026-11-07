@@ -371,14 +371,46 @@ namespace Emby.Xtream.Plugin.Tests
         }
 
         [Fact]
-        public void Replace_SaveThatUnreviews_WithTheOldReviewedMarkMergedBackIn_KeepsTheUnreview()
+        public void Replace_StalePageSavesAnOverlapTheStoreAlreadyHealed_KeepsItReviewed()
         {
-            // The page un-reviewed 5, then reloaded the de-dup view before saving, which merged
-            // the server's old reviewed mark back in. The save carries 5 in both stores; the
-            // tombstone is what this save added, so it is the user's decision.
+            // The incident behind ADR-C012: the page loaded the configuration while 5 was in both
+            // stores, the store then healed it to reviewed, and the page's save sent both again.
+            // Against the healed store the tombstone looks newly added, and the ADR-C010 save
+            // rule took it as an un-review: the title's files were deleted on the next sync.
             using (var dir = new TempDirectory())
             {
                 var state = ReplaceWith(dir, "[5,6]", "[]", "[5,6]", "[5]");
+
+                Assert.Equal(new HashSet<int> { 5, 6 }, state.ReviewedVodStreamIds);
+                Assert.Empty(state.UnreviewedVodStreamIds);
+            }
+        }
+
+        [Fact]
+        public void Replace_AnyOverlapInASave_StaysReviewed()
+        {
+            // A dashboard click never produces an overlap, so whichever side looks new, the save
+            // carries a stale copy and the safe reading wins: reviewed keeps the files.
+            using (var dir = new TempDirectory())
+            {
+                Assert.Equal(new HashSet<int> { 5 }, ReplaceWith(dir, "[]", "[5]", "[5]", "[5]").ReviewedVodStreamIds);
+            }
+
+            using (var dir = new TempDirectory())
+            {
+                var state = ReplaceWith(dir, "[]", "[]", "[5]", "[5]");
+                Assert.Equal(new HashSet<int> { 5 }, state.ReviewedVodStreamIds);
+                Assert.Empty(state.UnreviewedVodStreamIds);
+            }
+        }
+
+        [Fact]
+        public void Replace_AnUnreviewWithoutAnOverlap_StillLands()
+        {
+            // What a fresh page sends when the user un-reviews: the mark out, the tombstone in.
+            using (var dir = new TempDirectory())
+            {
+                var state = ReplaceWith(dir, "[5,6]", "[]", "[6]", "[5]");
 
                 Assert.Equal(new HashSet<int> { 6 }, state.ReviewedVodStreamIds);
                 Assert.Equal(new HashSet<int> { 5 }, state.UnreviewedVodStreamIds);
@@ -386,32 +418,7 @@ namespace Emby.Xtream.Plugin.Tests
         }
 
         [Fact]
-        public void Replace_SaveThatReReviews_WithTheOldTombstoneMergedBackIn_KeepsTheReview()
-        {
-            using (var dir = new TempDirectory())
-            {
-                var state = ReplaceWith(dir, "[]", "[5]", "[5]", "[5]");
-
-                Assert.Equal(new HashSet<int> { 5 }, state.ReviewedVodStreamIds);
-                Assert.Empty(state.UnreviewedVodStreamIds);
-            }
-        }
-
-        [Fact]
-        public void Replace_SaveThatAddsAnIdToBothStores_KeepsItReviewed()
-        {
-            // No way to tell which is newer, so it lands where the review gate already puts it.
-            using (var dir = new TempDirectory())
-            {
-                var state = ReplaceWith(dir, "[]", "[]", "[5]", "[5]");
-
-                Assert.Equal(new HashSet<int> { 5 }, state.ReviewedVodStreamIds);
-                Assert.Empty(state.UnreviewedVodStreamIds);
-            }
-        }
-
-        [Fact]
-        public void Replace_SeriesStoresAreSettledTheSameWay()
+        public void Replace_SeriesOverlapInASave_StaysReviewed()
         {
             using (var dir = new TempDirectory())
             {
@@ -424,8 +431,8 @@ namespace Emby.Xtream.Plugin.Tests
                 store.Replace(config, incoming);
 
                 var state = store.Read(config);
-                Assert.Empty(state.ReviewedSeriesIds);
-                Assert.Equal(new HashSet<int> { 7 }, state.UnreviewedSeriesIds);
+                Assert.Equal(new HashSet<int> { 7 }, state.ReviewedSeriesIds);
+                Assert.Empty(state.UnreviewedSeriesIds);
             }
         }
 

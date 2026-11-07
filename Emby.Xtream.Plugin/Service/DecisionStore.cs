@@ -299,7 +299,6 @@ namespace Emby.Xtream.Plugin.Service
                 }
 
                 TakeCopyBeforeReplaceLocked();
-                var before = state.Clone();
 
                 state.ExcludedVodStreamIds = ContentExclusionFilter.BuildSet(incoming.ExcludedVodStreamIds);
                 state.ExcludedSeriesIds = ContentExclusionFilter.BuildSet(incoming.ExcludedSeriesIds);
@@ -373,62 +372,17 @@ namespace Emby.Xtream.Plugin.Service
                         + "configuration, where the review gate will fail open rather than resurrect a withdrawal.");
                 }
 
-                ResolveSaveOverlap(before.ReviewedVodStreamIds, before.UnreviewedVodStreamIds,
-                    state.ReviewedVodStreamIds, state.UnreviewedVodStreamIds, "movie");
-                ResolveSaveOverlap(before.ReviewedSeriesIds, before.UnreviewedSeriesIds,
-                    state.ReviewedSeriesIds, state.UnreviewedSeriesIds, "series");
-
+                // An id this save puts in both stores is settled by Mutate like any other overlap:
+                // it stays reviewed. A click in the dashboard cannot produce one, so it is a stale
+                // copy (a page loaded before the store healed), never a decision (ADR-C012).
                 return true;
             });
         }
 
         /// <summary>
-        /// Settles an id a save put in both the reviewed and the un-reviewed store, using what the
-        /// save changed (ADR-C010): the side it newly added is the user's latest decision, and the
-        /// side that was already stored is a stale copy the page merged back in. An id the save
-        /// added to both, or to neither, is left for <see cref="KeepReviewedAndUnreviewedDisjointLocked"/>.
-        /// </summary>
-        private void ResolveSaveOverlap(
-            HashSet<int> reviewedBefore, HashSet<int> unreviewedBefore,
-            HashSet<int> reviewed, HashSet<int> unreviewed, string kind)
-        {
-            if (reviewed == null || unreviewed == null)
-            {
-                return;
-            }
-
-            var unreviewedWins = new List<int>();
-            var reviewedWins = new List<int>();
-            foreach (var id in unreviewed.Where(reviewed.Contains).ToList())
-            {
-                var newlyReviewed = reviewedBefore == null || !reviewedBefore.Contains(id);
-                var newlyUnreviewed = unreviewedBefore == null || !unreviewedBefore.Contains(id);
-                if (newlyUnreviewed && !newlyReviewed)
-                {
-                    reviewed.Remove(id);
-                    unreviewedWins.Add(id);
-                }
-                else if (newlyReviewed && !newlyUnreviewed)
-                {
-                    unreviewed.Remove(id);
-                    reviewedWins.Add(id);
-                }
-            }
-
-            if (_logger != null && (unreviewedWins.Count > 0 || reviewedWins.Count > 0))
-            {
-                _logger.Info(
-                    "Decision store: a save marked {0} {1} id(s) both reviewed and un-reviewed; kept the decision the save "
-                    + "made — un-reviewed: [{2}], reviewed: [{3}]",
-                    unreviewedWins.Count + reviewedWins.Count, kind,
-                    string.Join(",", unreviewedWins.OrderBy(i => i)),
-                    string.Join(",", reviewedWins.OrderBy(i => i)));
-            }
-        }
-
-        /// <summary>
-        /// Keeps every id in at most one of the reviewed and un-reviewed stores (ADR-C010). Runs on
-        /// every mutation, so a store that already holds an overlap heals on the next write.
+        /// Keeps every id in at most one of the reviewed and un-reviewed stores (ADR-C010, ADR-C012).
+        /// Runs on every mutation, saves included, so a store that already holds an overlap heals
+        /// on the next write and a save cannot write one.
         /// Reviewed wins: the review gate checks the reviewed store first, so that is how the sync
         /// already treats such an id, and the title keeps its files. An unreadable (null) store is
         /// left alone for repair, as everywhere else.

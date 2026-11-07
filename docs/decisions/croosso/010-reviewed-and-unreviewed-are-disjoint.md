@@ -3,7 +3,7 @@
 *(Local ADR, numbered in this repo's own `C` sequence — see [README.md](README.md).)*
 
 **Date**: 2026-11-06
-**Status**: ACCEPTED
+**Status**: ACCEPTED, save rule SUPERSEDED BY [ADR-C012](012-save-overlap-stays-reviewed.md)
 **Affects**: `Service/DecisionStore.cs` (`Mutate`, `Replace`),
 `Configuration/Web/config.js` (`mergeServerReviewed`)
 
@@ -52,7 +52,8 @@ off the stores.
 
 ## Decision
 
-**Saves are settled by what they changed.** `Replace` compares each id that the incoming
+**Saves are settled by what they changed.** *(Superseded by ADR-C012: a save's overlap now
+stays reviewed like any other. This rule un-reviewed a kept title from a stale page.)* `Replace` compares each id that the incoming
 configuration puts in both stores with the stored state before the save:
 
 - added to the tombstones by this save, already reviewed before it → **un-reviewed** (the
