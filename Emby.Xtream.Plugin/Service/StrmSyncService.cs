@@ -2278,6 +2278,11 @@ namespace Emby.Xtream.Plugin.Service
                 if (!string.IsNullOrEmpty(stripped))
                 {
                     folderNames.Add(stripped);
+                    // Also as the cleaner would name it today, so a folder written before a
+                    // cleaning rule existed ("4K - Title", "Title [MULTI-SUB]") still exempts the
+                    // title it now cleans to (ADR-C009). The user's own remove terms are not
+                    // applied: they are configuration, and this index is not.
+                    folderNames.Add(ContentNameCleaner.CleanContentName(stripped));
                     if (!SeasonFolderRegex.IsMatch(stripped))
                     {
                         titleNames.Add(stripped);

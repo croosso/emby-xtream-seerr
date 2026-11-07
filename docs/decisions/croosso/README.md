@@ -41,3 +41,4 @@ what it means in theirs.
 | [ADR-C001](001-decision-store-sidecar.md) | Own the decision stores instead of the configuration blob | Accepted |
 | [ADR-C007](007-orphan-grace-period.md) | A movie missing from the catalogue waits out a grace period before cleanup deletes it | Accepted |
 | [ADR-C008](008-dedupe-dispatcharr-versions-by-stream-id.md) | One Dispatcharr version entry per distinct stream ID | Accepted |
+| [ADR-C009](009-strip-quality-dash-prefixes.md) | The name pipeline strips quality-label dash prefixes ("4K - ", "4K-NF - ") | Accepted |
