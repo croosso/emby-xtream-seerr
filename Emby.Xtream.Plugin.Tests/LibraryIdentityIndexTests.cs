@@ -166,5 +166,43 @@ namespace Emby.Xtream.Plugin.Tests
                 Assert.Contains("Other Film", folderNames);
             }
         }
+
+        [Fact]
+        public void RecordsWhichTmdbIdsTheFoldersOfEachNameCarry()
+        {
+            // ADR-C011: the gate needs to know whether a name on disk belongs to a known TMDB title.
+            using (var temp = new TempDirectory())
+            {
+                Directory.CreateDirectory(Path.Combine(temp.Path, "Movies", "Shared (2025) [tmdbid=111]"));
+                Directory.CreateDirectory(Path.Combine(temp.Path, "Movies", "4K - Prefixed (2025) [tmdbid=333]"));
+                Directory.CreateDirectory(Path.Combine(temp.Path, "Movies", "Untagged (2025)"));
+
+                var tmdbIds = new HashSet<int>();
+                var folderNames = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+                var byName = new Dictionary<string, HashSet<int>>(System.StringComparer.OrdinalIgnoreCase);
+                StrmSyncService.BuildLibraryIdentityIndex(temp.Path, "Movies", tmdbIds, folderNames, byName);
+
+                Assert.Equal(new HashSet<int> { 111 }, byName["shared (2025)"]);
+                Assert.Equal(new HashSet<int> { 333 }, byName["Prefixed (2025)"]);
+                Assert.Equal(new HashSet<int> { 0 }, byName["Untagged (2025)"]);
+            }
+        }
+
+        [Theory]
+        [InlineData(new[] { 111 }, 222, true)]       // only another title has this name
+        [InlineData(new[] { 111, 222 }, 222, false)] // one of the folders is this title
+        [InlineData(new[] { 111, 0 }, 222, false)]   // an untagged folder could be this title
+        [InlineData(new[] { 0 }, 222, false)]        // nothing known beyond the name
+        public void NameHeldOnlyByOtherTitles_OnlyWhenEveryFolderOfThatNameIsAnotherTitle(
+            int[] folderTmdbIds, int providerTmdb, bool expected)
+        {
+            var byName = new Dictionary<string, HashSet<int>>(System.StringComparer.OrdinalIgnoreCase)
+            {
+                ["Shared (2025)"] = new HashSet<int>(folderTmdbIds),
+            };
+
+            Assert.Equal(expected, StrmSyncService.NameHeldOnlyByOtherTitles(byName, "Shared (2025)", providerTmdb));
+            Assert.False(StrmSyncService.NameHeldOnlyByOtherTitles(byName, "Not On Disk", providerTmdb));
+        }
     }
 }

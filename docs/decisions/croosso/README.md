@@ -43,3 +43,4 @@ what it means in theirs.
 | [ADR-C008](008-dedupe-dispatcharr-versions-by-stream-id.md) | One Dispatcharr version entry per distinct stream ID | Accepted |
 | [ADR-C009](009-strip-quality-dash-prefixes.md) | The name pipeline strips quality-label dash prefixes ("4K - ", "4K-NF - ") | Accepted |
 | [ADR-C010](010-reviewed-and-unreviewed-are-disjoint.md) | The reviewed and un-reviewed stores never hold the same id | Accepted |
+| [ADR-C011](011-gate-name-match-yields-to-tmdb.md) | The review gate's name match yields when TMDB ids disagree | Accepted |
