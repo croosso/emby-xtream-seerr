@@ -4469,8 +4469,16 @@ namespace Emby.Xtream.Plugin.Service
                         config.DispatcharrUrl, movie.StreamId, cancellationToken).ConfigureAwait(false);
                     if (vodDetail != null && !string.IsNullOrEmpty(vodDetail.Uuid))
                     {
-                        var providers = await dispatcharrVodClient.GetVodMovieProvidersAsync(
-                            config.DispatcharrUrl, movie.StreamId, cancellationToken).ConfigureAwait(false);
+                        // One entry per distinct stream_id. Two M3U accounts on the same upstream
+                        // list the same stream twice, and the proxy URL carries only stream_id:
+                        // Dispatcharr resolves both copies to the same relation and fails over
+                        // across every relation either way, so the second file is a pure duplicate
+                        // in Emby's version list (ADR-C008). First occurrence keeps the order.
+                        var providers = (await dispatcharrVodClient.GetVodMovieProvidersAsync(
+                                config.DispatcharrUrl, movie.StreamId, cancellationToken).ConfigureAwait(false))
+                            .GroupBy(p => p.StreamId)
+                            .Select(g => g.First())
+                            .ToList();
                         if (providers.Count > 1)
                         {
                             for (int vi = 0; vi < providers.Count; vi++)
