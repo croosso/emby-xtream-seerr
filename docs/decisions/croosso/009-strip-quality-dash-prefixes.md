@@ -26,9 +26,9 @@ Providers prefix titles with quality labels: `4K - `, `4K-NF - `, `4K-AMZ - `,
 `4K-FR-HDR - `, `4K-D+ - ` (all seen in one live catalogue; Dispatcharr's VOD Manager
 title-cleanup list carries the same family). Left in place, the label becomes part of the
 folder name. With NFO files and TMDB folder naming off, the folder name is all Emby has, and
-its TMDB search for `4K - Eternity` finds nothing. An unmatched movie gets no provider id, so
+its TMDB search for `4K - Some Film` finds nothing. An unmatched movie gets no provider id, so
 Emby cannot group its Dispatcharr version files and shows one movie per file: ten copies of
-`4K - Eternity` in the library.
+`4K - Some Film` in the library.
 
 `ContentRemoveTerms` is not an answer. It removes a term anywhere in a title, so `4K - `
 would also be cut from the middle of a name, every variant (`4K-NF - `, `4K-AMZ - `, …) needs
