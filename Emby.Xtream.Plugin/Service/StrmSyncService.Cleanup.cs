@@ -40,6 +40,9 @@ namespace Emby.Xtream.Plugin.Service
     /// - in SelectDueOrphans, the null-ledger-path check and the "first-missing in the future"
     ///   boundary (&gt; vs &gt;=): OrphanGraceLedger.Load(null) already reads as empty, and resetting
     ///   a time equal to now to now changes nothing. The waiting counter only feeds the log.
+    /// - in RemoveExcludedContent, the folder sort order and candidates.Remove: the result must not
+    ///   depend on listing order (that was the ADR-C013 bug), so the sort only steadies the log; and
+    ///   a removed folder has no owned files left for a second same-name item to delete.
     /// </summary>
     public partial class StrmSyncService
     {
