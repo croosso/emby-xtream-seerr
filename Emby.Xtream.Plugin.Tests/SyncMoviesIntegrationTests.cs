@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -825,23 +826,91 @@ namespace Emby.Xtream.Plugin.Tests
         /// the providers URL and FakeHttpHandler takes the first match with a queued body.
         /// </summary>
         private void EnableDispatcharrForMovie(PluginConfiguration config, int providerCount)
+            => EnableDispatcharrForMovie(config, providerCount == 2 ? new[] { 11, 12 } : new[] { 11 });
+
+        /// <summary>
+        /// Same, with the providers listed as their stream ids, one relation each, in the order
+        /// Dispatcharr returns them. Repeat an id to model two M3U accounts on one upstream.
+        /// </summary>
+        private void EnableDispatcharrForMovie(PluginConfiguration config, int[] providerStreamIds)
         {
             config.EnableDispatcharr = true;
             config.DispatcharrUrl = "http://fake-dispatcharr";
             config.DispatcharrUser = "admin";
             config.DispatcharrPass = "secret";
             Handler.RespondWith("/api/accounts/token/", "{\"access\":\"tok\",\"refresh\":\"ref\"}");
-            if (providerCount == 2)
-            {
-                Handler.RespondWith("api/vod/movies/1/providers/",
-                    "[{\"id\":1,\"stream_id\":11,\"name\":\"A\"},{\"id\":2,\"stream_id\":12,\"name\":\"B\"}]");
-            }
-            else
-            {
-                Handler.RespondWith("api/vod/movies/1/providers/",
-                    "[{\"id\":1,\"stream_id\":11,\"name\":\"A\"}]");
-            }
+            var providers = providerStreamIds.Select((streamId, i) => string.Format(
+                CultureInfo.InvariantCulture, "{{\"id\":{0},\"stream_id\":{1},\"name\":\"P{0}\"}}", i + 1, streamId));
+            Handler.RespondWith("api/vod/movies/1/providers/", "[" + string.Join(",", providers) + "]");
             Handler.RespondWith("api/vod/movies/1/", "{\"id\":1,\"uuid\":\"movie-uuid\"}");
+        }
+
+        private static string VersionUrl(int streamId)
+            => "http://fake-dispatcharr/proxy/vod/movie/movie-uuid?stream_id=" + streamId;
+
+        /// <summary>
+        /// Two M3U accounts on the same upstream list the same stream twice. The proxy URL only
+        /// carries stream_id, so both copies play the same relation with the same failover: one
+        /// file per distinct stream, numbered in Dispatcharr's order (ADR-C008).
+        /// </summary>
+        [Fact]
+        public async Task DispatcharrProvidersSharingAStreamId_WriteOneEntryPerDistinctStream()
+        {
+            var config = DefaultConfig();
+            EnableDispatcharrForMovie(config, new[] { 11, 12, 11, 13, 12 });
+            RegisterVodStreams(VodStreamsJson(VodStream(streamId: 1, name: "Test Movie", added: 1000)));
+
+            var svc = MakeService();
+            svc.DispatcharrHandler = Handler;
+            await svc.SyncMoviesAsync(config, None, SaveConfig);
+
+            var dir = Path.Combine(TempDir.Path, "Movies", "Test Movie");
+            Assert.Equal(VersionUrl(11), File.ReadAllText(Path.Combine(dir, "Test Movie.strm")));
+            Assert.Equal(VersionUrl(12), File.ReadAllText(Path.Combine(dir, "Test Movie - Version 2.strm")));
+            Assert.Equal(VersionUrl(13), File.ReadAllText(Path.Combine(dir, "Test Movie - Version 3.strm")));
+            Assert.Equal(3, Directory.GetFiles(dir, "*.strm").Length);
+        }
+
+        [Fact]
+        public async Task DispatcharrProvidersAllSharingOneStreamId_WriteASingleEntry()
+        {
+            // Duplicates of one stream are one version, which takes the same single-entry path
+            // as a movie with one provider.
+            var config = DefaultConfig();
+            EnableDispatcharrForMovie(config, new[] { 11, 11 });
+            RegisterVodStreams(VodStreamsJson(VodStream(streamId: 1, name: "Test Movie", added: 1000)));
+
+            var svc = MakeService();
+            svc.DispatcharrHandler = Handler;
+            await svc.SyncMoviesAsync(config, None, SaveConfig);
+
+            var dir = Path.Combine(TempDir.Path, "Movies", "Test Movie");
+            Assert.Equal(new[] { Path.Combine(dir, "Test Movie.strm") }, Directory.GetFiles(dir, "*.strm"));
+            Assert.Equal("http://fake-xtream/movie/user/pass/1.mkv", File.ReadAllText(Path.Combine(dir, "Test Movie.strm")));
+        }
+
+        [Fact]
+        public async Task Rewrite_DropsDuplicateVersionEntriesAnEarlierSyncWrote()
+        {
+            // The library written before this fix: Version 3 repeats the main entry's stream.
+            var config = DefaultConfig();
+            config.CleanupOrphans = true;
+            var dir = Path.Combine(TempDir.Path, "Movies", "Test Movie");
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(Path.Combine(dir, "Test Movie.strm"), VersionUrl(11));
+            File.WriteAllText(Path.Combine(dir, "Test Movie - Version 2.strm"), VersionUrl(12));
+            File.WriteAllText(Path.Combine(dir, "Test Movie - Version 3.strm"), VersionUrl(11));
+
+            EnableDispatcharrForMovie(config, new[] { 11, 12, 11 });
+            RegisterVodStreams(VodStreamsJson(VodStream(streamId: 1, name: "Test Movie", added: 1000)));
+            var svc = MakeService();
+            svc.DispatcharrHandler = Handler;
+            await svc.SyncMoviesAsync(config, None, SaveConfig);
+
+            Assert.True(File.Exists(Path.Combine(dir, "Test Movie.strm")));
+            Assert.True(File.Exists(Path.Combine(dir, "Test Movie - Version 2.strm")));
+            Assert.False(File.Exists(Path.Combine(dir, "Test Movie - Version 3.strm")),
+                "the rewrite no longer produces the duplicate, so cleanup takes it");
         }
 
         // -----------------------------------------------------------------
