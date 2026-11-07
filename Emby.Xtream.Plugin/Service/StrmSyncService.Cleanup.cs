@@ -98,7 +98,7 @@ namespace Emby.Xtream.Plugin.Service
         /// are not protected. See ADR-018.
         /// </remarks>
         /// <param name="config">Active plugin configuration (supplies the library root).</param>
-        /// <param name="excludedItems">Cleaned display name + category ID for each excluded item.</param>
+        /// <param name="excludedItems">Cleaned display name, category ID and provider TMDB id (when known) for each excluded item.</param>
         /// <param name="folderMode">"single", "multiple" or "custom".</param>
         /// <param name="categoryNames">Category ID → name, used by "multiple" mode.</param>
         /// <param name="folderMappings">Category ID → folder, used by "custom" mode.</param>
@@ -107,7 +107,7 @@ namespace Emby.Xtream.Plugin.Service
         /// <returns>The number of folders deleted.</returns>
         private int RemoveExcludedContent(
             PluginConfiguration config,
-            List<Tuple<string, int?>> excludedItems,
+            List<ExcludedItem> excludedItems,
             string folderMode,
             Dictionary<int, string> categoryNames,
             Dictionary<int, string> folderMappings,
@@ -123,98 +123,124 @@ namespace Emby.Xtream.Plugin.Service
             var kept = 0;
             var writtenDirs = BuildWrittenDirectories(writtenPaths, config.StrmLibraryPath);
 
-            // subFolder → { folderNameWithoutIdSuffix → fullPath }. One readdir per subfolder.
-            var dirIndexCache = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+            // subFolder → { folderNameWithoutIdSuffix → every folder with that name }. One readdir
+            // per subfolder. Every folder, not the first: with TMDB folder naming two different
+            // titles can share a name ("Title (2025) [tmdbid=A]" and "[tmdbid=B]"), and keeping
+            // only one meant the excluded title's own folder was never looked at (ADR-C013).
+            var dirIndexCache = new Dictionary<string, Dictionary<string, List<string>>>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var item in excludedItems)
             {
-                var sanitized = SanitizeFileName(item.Item1);
+                var sanitized = SanitizeFileName(item.Name);
                 if (string.IsNullOrWhiteSpace(sanitized))
                 {
                     continue;
                 }
 
                 var subFolder = BuildContentFolderPath(
-                    folderMode, item.Item2, categoryNames, folderMappings, rootFolder);
+                    folderMode, item.CategoryId, categoryNames, folderMappings, rootFolder);
                 if (subFolder == null)
                 {
                     continue;
                 }
 
-                Dictionary<string, string> dirIndex;
+                Dictionary<string, List<string>> dirIndex;
                 if (!dirIndexCache.TryGetValue(subFolder, out dirIndex))
                 {
-                    dirIndex = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    dirIndex = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
                     var fullPath = Path.Combine(config.StrmLibraryPath, subFolder);
                     if (Directory.Exists(fullPath))
                     {
-                        foreach (var dir in Directory.GetDirectories(fullPath))
+                        foreach (var dir in Directory.GetDirectories(fullPath).OrderBy(d => d, StringComparer.OrdinalIgnoreCase))
                         {
                             var stripped = StripFolderIdSuffix(Path.GetFileName(dir));
-                            if (!string.IsNullOrEmpty(stripped) && !dirIndex.ContainsKey(stripped))
+                            if (string.IsNullOrEmpty(stripped))
                             {
-                                dirIndex[stripped] = dir;
+                                continue;
                             }
+
+                            List<string> named;
+                            if (!dirIndex.TryGetValue(stripped, out named))
+                            {
+                                named = new List<string>();
+                                dirIndex[stripped] = named;
+                            }
+
+                            named.Add(dir);
                         }
                     }
 
                     dirIndexCache[subFolder] = dirIndex;
                 }
 
-                string existingDir;
-                if (!dirIndex.TryGetValue(sanitized, out existingDir))
+                List<string> candidates;
+                if (!dirIndex.TryGetValue(sanitized, out candidates))
                 {
                     continue;
                 }
 
-                // An included title wrote this folder moments ago (ADR-F007, upstream ADR-018). Two
-                // provider IDs produced one folder name; deleting it would erase content the user
-                // kept, and the next run would write and delete it again.
-                //
-                // FORK: the message says what to do about it, and kept folders are counted below.
-                // Logged at Info because the state is genuinely wrong at the provider and the user
-                // is the only one who can resolve it, so the line has to be actionable on its own.
-                if (writtenDirs.Contains(NormalizeDirectory(existingDir)))
+                foreach (var existingDir in candidates.ToList())
                 {
-                    kept++;
-                    _logger.Info(
-                        "Kept '{0}': excluded item '{1}' matches a folder this sync just wrote for an "
-                        + "included title. Two provider entries share a folder name, so excluding one "
-                        + "would delete the other. Nothing was removed — exclude both entries, or merge "
-                        + "them at the provider, if you meant to drop this title.",
-                        existingDir, sanitized);
-                    continue;
-                }
-
-                try
-                {
-                    // Delete only the files this plugin actually wrote, verified by content, then
-                    // prune whatever that emptied. Matching is by title alone, so a match is not
-                    // proof of ownership: without this a user's own "Ben-Hur" folder would be
-                    // destroyed by excluding the provider's "Ben-Hur", and a hand-written .nfo or a
-                    // trailer.strm sitting beside our output would go with it. See ADR-014.
-                    var deletedFiles = StrmOwnership.DeleteOwnedFiles(
-                        existingDir, config.BaseUrl, config.DispatcharrUrl, out var folderGone);
-
-                    if (deletedFiles == 0)
+                    // An included title wrote this folder moments ago (ADR-F007, upstream ADR-018). Two
+                    // provider IDs produced one folder name; deleting it would erase content the user
+                    // kept, and the next run would write and delete it again.
+                    //
+                    // FORK: the message says what to do about it, and kept folders are counted below.
+                    // Logged at Info because the state is genuinely wrong at the provider and the user
+                    // is the only one who can resolve it, so the line has to be actionable on its own.
+                    if (writtenDirs.Contains(NormalizeDirectory(existingDir)))
                     {
-                        _logger.Debug(
-                            "Skipping '{0}' for excluded item '{1}': nothing in it was written by this plugin",
+                        kept++;
+                        _logger.Info(
+                            "Kept '{0}': excluded item '{1}' matches a folder this sync just wrote for an "
+                            + "included title. Two provider entries share a folder name, so excluding one "
+                            + "would delete the other. Nothing was removed — exclude both entries, or merge "
+                            + "them at the provider, if you meant to drop this title.",
                             existingDir, sanitized);
                         continue;
                     }
 
-                    dirIndex.Remove(sanitized);
-                    removed++;
-                    _logger.Info(
-                        folderGone
-                            ? "Removed excluded item folder: {0}"
-                            : "Removed plugin files for excluded item, folder kept (still has other content): {0}",
-                        existingDir);
-                }
-                catch (Exception ex)
-                {
-                    _logger.Warn("Failed to remove excluded item folder '{0}': {1}", existingDir, ex.Message);
+                    // A folder tagged with a different TMDB id belongs to another title that only shares
+                    // the name, even if that title was not written this run (missing from the catalogue
+                    // for a while, say). Orphan cleanup decides about it under its own guards (ADR-C013).
+                    var folderTmdb = FolderTmdbId(existingDir);
+                    if (folderTmdb.HasValue && item.TmdbId.HasValue && folderTmdb.Value != item.TmdbId.Value)
+                    {
+                        _logger.Debug(
+                            "Skipping '{0}' for excluded item '{1}': the folder belongs to TMDB {2}, the item is TMDB {3}",
+                            existingDir, sanitized, folderTmdb.Value, item.TmdbId.Value);
+                        continue;
+                    }
+
+                    try
+                    {
+                        // Delete only the files this plugin actually wrote, verified by content, then
+                        // prune whatever that emptied. Matching is by title alone, so a match is not
+                        // proof of ownership: without this a user's own "Ben-Hur" folder would be
+                        // destroyed by excluding the provider's "Ben-Hur", and a hand-written .nfo or a
+                        // trailer.strm sitting beside our output would go with it. See ADR-014.
+                        var deletedFiles = StrmOwnership.DeleteOwnedFiles(
+                            existingDir, config.BaseUrl, config.DispatcharrUrl, out var folderGone);
+                        if (deletedFiles == 0)
+                        {
+                            _logger.Debug(
+                                "Skipping '{0}' for excluded item '{1}': nothing in it was written by this plugin",
+                                existingDir, sanitized);
+                            continue;
+                        }
+
+                        candidates.Remove(existingDir);
+                        removed++;
+                        _logger.Info(
+                            folderGone
+                                ? "Removed excluded item folder: {0}"
+                                : "Removed plugin files for excluded item, folder kept (still has other content): {0}",
+                            existingDir);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Warn("Failed to remove excluded item folder '{0}': {1}", existingDir, ex.Message);
+                    }
                 }
             }
 
@@ -234,6 +260,41 @@ namespace Emby.Xtream.Plugin.Service
             return removed;
         }
 
+
+        /// <summary>
+        /// An item the exclusion or un-review pass removes: its cleaned name, category, and the
+        /// provider's TMDB id when it supplies one (movies; the series list carries none).
+        /// </summary>
+        private sealed class ExcludedItem
+        {
+            public ExcludedItem(string name, int? categoryId, int? tmdbId = null)
+            {
+                Name = name;
+                CategoryId = categoryId;
+                TmdbId = tmdbId;
+            }
+
+            public string Name { get; }
+
+            public int? CategoryId { get; }
+
+            public int? TmdbId { get; }
+        }
+
+        /// <summary>The <c>[tmdbid=N]</c> a folder name carries, or null.</summary>
+        private static int? FolderTmdbId(string dir)
+        {
+            var match = FolderTmdbIdRegex.Match(Path.GetFileName(dir) ?? string.Empty);
+            int id;
+            if (match.Success
+                && int.TryParse(match.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out id)
+                && id > 0)
+            {
+                return id;
+            }
+
+            return null;
+        }
 
         /// <summary>
         /// Every directory that holds a path in <paramref name="writtenPaths"/>, and its ancestors

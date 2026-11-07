@@ -45,3 +45,4 @@ what it means in theirs.
 | [ADR-C010](010-reviewed-and-unreviewed-are-disjoint.md) | The reviewed and un-reviewed stores never hold the same id | Accepted; save rule superseded by C012 |
 | [ADR-C011](011-gate-name-match-yields-to-tmdb.md) | The review gate's name match yields when TMDB ids disagree | Accepted |
 | [ADR-C012](012-save-overlap-stays-reviewed.md) | An id a save puts in both review stores stays reviewed | Accepted |
+| [ADR-C013](013-exclusion-sees-every-same-name-folder.md) | Exclusion looks at every folder with the name, and respects their TMDB ids | Accepted |
