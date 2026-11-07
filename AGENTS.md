@@ -137,10 +137,12 @@ Rules that follow:
 - **Configuration saves are routed automatically**: `Plugin.UpdateConfiguration` diffs the incoming stores against the current ones and applies changes through the store, so the dashboard and restore paths need no special handling. A new REST mutation endpoint should call the store directly — never read-modify-write the config.
 - **Sync folds are additive** (`AddReviewed` merges into the *current* checkpoint); the reconcile pass runs read-compute-write under the store's lock. Do not reintroduce "load the set at sync start, serialize the whole set at sync end" — that is the lost-update bug ADR-C001 fixed.
 - **Unreadable is not empty.** Null sets flow through with the pre-ADR-C001 fail-open contract: an unparseable reviewed store disables the review gate, is left untouched for repair, and is never rebuilt into an empty one. A store file in an unknown (newer) format makes the store read-only; an unwritable records root degrades it to config-backed mode — the store never fails the sync.
-- **Reviewed and un-reviewed are disjoint.** Every `Mutate` drops the tombstone of an id that is
-  also reviewed (how the gate already treats it), and `Replace` first settles such an id by what
-  the save changed. Never add to one set without removing from the other. See
-  [ADR-C010](docs/decisions/croosso/010-reviewed-and-unreviewed-are-disjoint.md).
+- **Reviewed and un-reviewed are disjoint.** Every `Mutate`, saves included, drops the tombstone of
+  an id that is also reviewed (how the gate already treats it). Do not try to read intent from an
+  overlap in a save: it is always a stale copy, and guessing "un-review" deleted a kept title. Never
+  add to one set without removing from the other. See
+  [ADR-C010](docs/decisions/croosso/010-reviewed-and-unreviewed-are-disjoint.md) and
+  [ADR-C012](docs/decisions/croosso/012-save-overlap-stays-reviewed.md).
 - **Offline config repairs** (e.g. `repair-id-churn.py` candidates installed with Emby stopped) must move `decisions.json` aside too, or the repaired id lists are ignored; the repair script prints the path and the step.
 
 ### Per-item exclusions delete folders directly, not via orphan cleanup
