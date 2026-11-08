@@ -10,7 +10,15 @@ starting at 1.0.0 — independent of upstream
 
 ### Added
 
-- Nothing yet.
+- **Leave out cam and telesync copies of movies (ADR-C014).** New releases often show up
+  first as theatre recordings tagged `[HDTS]`, `(TELESYNC)` or `[HDCAM]`. A stream-name
+  filter on your Dispatcharr M3U accounts looks like the fix but only applies to live TV, so
+  those copies kept reaching the library. Turn on *Plugin Config → STRM Sync Settings →
+  Leave out pre-release movie copies* to skip them. With Dispatcharr, each version of a
+  movie is judged by the name its own provider gives it, so a movie keeps its clean versions
+  and is only left out when every version is tagged. A left-out movie is removed from the
+  library and hidden from the de-duplicated movie list, and comes back on its own once a
+  provider lists a clean copy. Copies a provider does not tag cannot be detected.
 
 ## [1.10.0] - 2026-10-25
 
