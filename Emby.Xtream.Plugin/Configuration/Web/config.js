@@ -714,6 +714,8 @@ function (BaseView, loading) {
             view.querySelector('.chkSmartSkipExisting').checked = config.SmartSkipExisting !== false;
             // On unless turned off, including for settings saved before this option existed.
             view.querySelector('.chkRefreshEmbyLibraryAfterSync').checked = config.RefreshEmbyLibraryAfterSync !== false;
+            view.querySelector('.chkEnableReleaseTagFilter').checked = !!config.EnableReleaseTagFilter;
+            view.querySelector('.txtReleaseTagFilterPattern').value = config.ReleaseTagFilterPattern || '';
             // Opt-in, so default OFF — note the !== false idiom above is for on-by-default flags.
             view.querySelector('.chkRequireReviewBeforeSync').checked = !!config.RequireReviewBeforeSync;
             view.querySelector('.chkEnableSeerrMonitor').checked = !!config.EnableSeerrMonitor;
@@ -862,6 +864,9 @@ function (BaseView, loading) {
             config.StrmLibraryPath = view.querySelector('.txtStrmLibraryPath').value.replace(/\/+$/, '') || '/config/xtream';
             config.SmartSkipExisting = view.querySelector('.chkSmartSkipExisting').checked;
             config.RefreshEmbyLibraryAfterSync = view.querySelector('.chkRefreshEmbyLibraryAfterSync').checked;
+            config.EnableReleaseTagFilter = view.querySelector('.chkEnableReleaseTagFilter').checked;
+            // Blank means the built-in pattern (ReleaseTagFilter.DefaultPattern), not "match nothing".
+            config.ReleaseTagFilterPattern = view.querySelector('.txtReleaseTagFilterPattern').value.trim();
             config.RequireReviewBeforeSync = view.querySelector('.chkRequireReviewBeforeSync').checked;
             config.EnableSeerrMonitor = view.querySelector('.chkEnableSeerrMonitor').checked;
             config.SeerrUrl = view.querySelector('.txtSeerrUrl').value.replace(/\/+$/, '');

@@ -299,6 +299,20 @@ namespace Emby.Xtream.Plugin
         public bool EnableContentNameCleaning { get; set; }
         public string ContentRemoveTerms { get; set; } = string.Empty;
 
+        /// <summary>
+        /// Leave out movie versions whose provider name carries a pre-release tag such as
+        /// [HDTS], (TELESYNC) or [HDCAM] (ADR-C014). With Dispatcharr each version is judged
+        /// by its own provider name and a title is dropped only when every version is tagged.
+        /// A dropped title's files are removed like a per-item exclusion.
+        /// </summary>
+        public bool EnableReleaseTagFilter { get; set; }
+
+        /// <summary>
+        /// Case-insensitive regex for <see cref="EnableReleaseTagFilter"/>. Empty means
+        /// <see cref="Service.ReleaseTagFilter.DefaultPattern"/>.
+        /// </summary>
+        public string ReleaseTagFilterPattern { get; set; } = string.Empty;
+
         // TMDB folder naming
         public bool EnableTmdbFolderNaming { get; set; }
         public bool EnableTmdbFallbackLookup { get; set; }

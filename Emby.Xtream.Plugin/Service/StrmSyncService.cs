@@ -2601,6 +2601,21 @@ namespace Emby.Xtream.Plugin.Service
                         excludedMovies.Count, fetchedStreams.Count);
                 }
 
+                // Shared Dispatcharr VOD client — queried per-movie, after smart-skip, and for
+                // the titles the release tag filter has to look inside.
+                var dispatcharrVodClient = CreateDispatcharrVodClient(config);
+
+                // Pre-release copies (ADR-C014). A filtered title goes the way of an excluded
+                // one, files removed below; versions are filtered again at write time.
+                var releaseTagFilter = BuildReleaseTagFilter(config);
+                var releaseTagFiltered = new List<ExcludedItem>();
+                if (releaseTagFilter != null)
+                {
+                    allStreams = await ApplyReleaseTagFilterAsync(
+                        allStreams, releaseTagFilter, config, dispatcharrVodClient, releaseTagFiltered,
+                        cancellationToken).ConfigureAwait(false);
+                }
+
                 // Delta sync: split into new (not yet synced) and existing
                 var lastMovieTs = config.LastMovieSyncTimestamp;
                 var newStreams = lastMovieTs > 0
@@ -2728,9 +2743,6 @@ namespace Emby.Xtream.Plugin.Service
                 // Counted at the write: Completed minus Skipped counted failures as writes.
                 int moviesWrittenCount = 0;
 
-                // Shared Dispatcharr VOD client — only queried per-movie, after smart-skip
-                var dispatcharrVodClient = CreateDispatcharrVodClient(config);
-
                 var writeContext = new MovieWriteContext
                 {
                     Config = config,
@@ -2739,6 +2751,7 @@ namespace Emby.Xtream.Plugin.Service
                     WrittenPaths = writtenPaths,
                     WrittenUrls = writtenUrls,
                     DispatcharrVodClient = dispatcharrVodClient,
+                    ReleaseTagFilter = releaseTagFilter,
                     LastMovieTimestamp = lastMovieTs,
                     WantedCapture = (wantedMovie, wantedTmdbId) =>
                     {
@@ -2840,7 +2853,18 @@ namespace Emby.Xtream.Plugin.Service
                             return;
                         }
 
-                        if (outcome == MovieWriteOutcome.NoFolder || outcome == MovieWriteOutcome.Skipped)
+                        if (outcome == MovieWriteOutcome.Filtered)
+                        {
+                            // Every version is a pre-release copy (ADR-C014): treated like the
+                            // title-level filter, its files leave the library below.
+                            lock (releaseTagFiltered)
+                            {
+                                releaseTagFiltered.Add(new ExcludedItem(write.CleanedName, movie.CategoryId, ProviderTmdbId(movie.TmdbId)));
+                            }
+                        }
+
+                        if (outcome == MovieWriteOutcome.NoFolder || outcome == MovieWriteOutcome.Skipped
+                            || outcome == MovieWriteOutcome.Filtered)
                         {
                             Interlocked.Increment(ref _movieProgress.Skipped);
                             Interlocked.Increment(ref _movieProgress.Completed);
@@ -2968,6 +2992,25 @@ namespace Emby.Xtream.Plugin.Service
                     {
                         _logger.Warn(
                             "Removing excluded movies postponed to the next sync: a category failed to load");
+                    }
+                }
+
+                // Remove the files of pre-release copies (ADR-C014). Same targeted pass and the
+                // same safety contract as exclusions, and postponed for the same reason. A title
+                // with a kept same-name twin keeps its folder: the twin is in writtenPaths.
+                if (releaseTagFiltered.Count > 0)
+                {
+                    if (!vodFetch.HadFailures)
+                    {
+                        _movieProgress.Phase = "Removing pre-release copies";
+                        _movieProgress.Deleted += RemoveExcludedContent(
+                            config, releaseTagFiltered, config.MovieFolderMode, categoryNames, folderMappings, "Movies",
+                            writtenPaths);
+                    }
+                    else
+                    {
+                        _logger.Warn(
+                            "Removing pre-release copies postponed to the next sync: a category failed to load");
                     }
                 }
 
@@ -4368,7 +4411,79 @@ namespace Emby.Xtream.Plugin.Service
             return client;
         }
 
-        private enum MovieWriteOutcome { InvalidName, NoFolder, Skipped, Written }
+        /// <summary>The configured pre-release filter (ADR-C014), or null when off or unusable.</summary>
+        private System.Text.RegularExpressions.Regex BuildReleaseTagFilter(PluginConfiguration config)
+        {
+            string error;
+            var filter = ReleaseTagFilter.Build(config, out error);
+            if (error != null)
+            {
+                _logger.Error(
+                    "The pre-release filter pattern is not a valid regular expression, so nothing is filtered this run: {0}",
+                    error);
+            }
+
+            return filter;
+        }
+
+        /// <summary>
+        /// Takes the titles the pre-release filter drops out of the catalogue (ADR-C014) and
+        /// records them in <paramref name="filtered"/> for the removal pass. Only titles whose
+        /// name is tagged are looked at, so Dispatcharr is asked about a handful, not the catalogue.
+        /// </summary>
+        private async Task<List<VodStreamInfo>> ApplyReleaseTagFilterAsync(
+            List<VodStreamInfo> streams,
+            System.Text.RegularExpressions.Regex filter,
+            PluginConfiguration config,
+            Emby.Xtream.Plugin.Client.DispatcharrClient dispatcharrVodClient,
+            List<ExcludedItem> filtered,
+            CancellationToken cancellationToken)
+        {
+            var kept = new List<VodStreamInfo>(streams.Count);
+            var lookupFailures = 0;
+            foreach (var s in streams)
+            {
+                var isFiltered = await ReleaseTagFilter.IsTitleFilteredAsync(
+                    filter,
+                    s.Name,
+                    dispatcharrVodClient == null
+                        ? (Func<Task<List<DispatcharrVodProvider>>>)null
+                        : () => dispatcharrVodClient.GetVodMovieProvidersAsync(config.DispatcharrUrl, s.StreamId, cancellationToken),
+                    reason =>
+                    {
+                        lookupFailures++;
+                        _logger.Debug("Pre-release filter: could not read the versions of '{0}', keeping it: {1}", s.Name, reason);
+                    }).ConfigureAwait(false);
+
+                if (!isFiltered)
+                {
+                    kept.Add(s);
+                    continue;
+                }
+
+                var name = config.EnableContentNameCleaning
+                    ? ContentNameCleaner.CleanContentName(s.Name, config.ContentRemoveTerms)
+                    : s.Name;
+                filtered.Add(new ExcludedItem(name, s.CategoryId, ProviderTmdbId(s.TmdbId)));
+            }
+
+            if (filtered.Count > 0 || lookupFailures > 0)
+            {
+                var sample = filtered.Select(f => f.Name).Take(15).ToList();
+                _logger.Info(
+                    "Pre-release filter: leaving out {0} of {1} movies{2}{3}",
+                    filtered.Count,
+                    streams.Count,
+                    sample.Count > 0 ? ": " + string.Join(", ", sample) + (filtered.Count > sample.Count ? ", ..." : string.Empty) : string.Empty,
+                    lookupFailures > 0
+                        ? string.Format(CultureInfo.InvariantCulture, " ({0} tagged title(s) kept because Dispatcharr could not list their versions)", lookupFailures)
+                        : string.Empty);
+            }
+
+            return kept;
+        }
+
+        private enum MovieWriteOutcome { InvalidName, NoFolder, Skipped, Written, Filtered }
 
         /// <summary>What one movie write produced, filled in as it goes so a caller's catch can read it.</summary>
         private sealed class MovieWriteResult
@@ -4387,6 +4502,8 @@ namespace Emby.Xtream.Plugin.Service
             /// <summary>URLs of the entries written or found up to date (ADR-C007). Optional.</summary>
             public HashSet<string> WrittenUrls;
             public Emby.Xtream.Plugin.Client.DispatcharrClient DispatcharrVodClient;
+            /// <summary>The pre-release filter (ADR-C014), or null when it is off.</summary>
+            public System.Text.RegularExpressions.Regex ReleaseTagFilter;
             /// <summary>0 treats every movie as new, so smart skip never applies (the retry passes 0).</summary>
             public long LastMovieTimestamp;
             /// <summary>
@@ -4532,7 +4649,36 @@ namespace Emby.Xtream.Plugin.Service
                             .GroupBy(p => p.StreamId)
                             .Select(g => g.First())
                             .ToList();
-                        if (providers.Count > 1)
+
+                        // Pre-release copies (ADR-C014), judged by each version's own provider
+                        // name. When the filter dropped any, the kept ones are written as proxy
+                        // entries even if only one is left: the plain Xtream URL lets Dispatcharr
+                        // pick by account priority, which can be the copy that was just dropped.
+                        var droppedVersions = false;
+                        if (ctx.ReleaseTagFilter != null && providers.Count > 0)
+                        {
+                            var kept = ReleaseTagFilter.KeepVersions(ctx.ReleaseTagFilter, providers);
+                            if (kept.Count == 0)
+                            {
+                                _logger.Info(
+                                    "Pre-release filter: leaving out '{0}', every version is tagged ({1})",
+                                    cleanedName,
+                                    string.Join(", ", providers.Select(p => p.ProviderName)));
+                                return MovieWriteOutcome.Filtered;
+                            }
+
+                            if (kept.Count < providers.Count)
+                            {
+                                _logger.Info(
+                                    "Pre-release filter: '{0}' keeps {1} of {2} versions, leaving out {3}",
+                                    cleanedName, kept.Count, providers.Count,
+                                    string.Join(", ", providers.Except(kept).Select(p => p.ProviderName)));
+                                droppedVersions = true;
+                                providers = kept;
+                            }
+                        }
+
+                        if (providers.Count > 1 || droppedVersions)
                         {
                             for (int vi = 0; vi < providers.Count; vi++)
                             {
@@ -4696,6 +4842,7 @@ namespace Emby.Xtream.Plugin.Service
                     FolderMappings = FolderMappingParser.Parse(config.MovieFolderMappings),
                     WrittenPaths = writtenPaths,
                     DispatcharrVodClient = dispatcharrVodClient,
+                    ReleaseTagFilter = BuildReleaseTagFilter(config),
                     // The movie failed last time, so write it whatever is on disk, as the old retry did.
                     LastMovieTimestamp = 0,
                 };
@@ -4720,7 +4867,9 @@ namespace Emby.Xtream.Plugin.Service
                         var outcome = await WriteMovieAsync(movie, writeContext, new MovieWriteResult(), cancellationToken).ConfigureAwait(false);
                         // Only a written movie is done. A retry that wrote nothing (no folder for its
                         // category, or no usable name) stays in the failed list for the next sync.
-                        if (outcome != MovieWriteOutcome.Written)
+                        // A movie that turned out to be only pre-release copies is done too: the
+                        // filter is the decision, and retrying it again would change nothing.
+                        if (outcome != MovieWriteOutcome.Written && outcome != MovieWriteOutcome.Filtered)
                             throw new InvalidOperationException("Nothing written (" + outcome + ")");
 
                         lock (succeededLock) { succeeded.Add(item); }

@@ -657,6 +657,47 @@ namespace Emby.Xtream.Plugin.Api
                 .ToList();
         }
 
+        /// <summary>
+        /// Drops the titles the pre-release filter leaves out (ADR-C014). Without Dispatcharr
+        /// (<paramref name="fetchVersions"/> null) the name decides; with it, only titles whose
+        /// name is tagged are looked up, a few at a time.
+        /// </summary>
+        internal static async Task<List<DedupedItemDto>> HidePreReleaseCopiesAsync(
+            List<DedupedItemDto> items,
+            System.Text.RegularExpressions.Regex filter,
+            Func<int, Task<List<DispatcharrVodProvider>>> fetchVersions,
+            int parallelism)
+        {
+            var hidden = new System.Collections.Concurrent.ConcurrentDictionary<DedupedItemDto, bool>();
+            var sem = new SemaphoreSlim(Math.Max(1, parallelism));
+            var checks = items
+                .Where(i => ReleaseTagFilter.IsTagged(filter, i.Name))
+                .Select(async item =>
+                {
+                    await sem.WaitAsync().ConfigureAwait(false);
+                    try
+                    {
+                        // A movie collapses to one id across categories (AggregateVodByStreamId).
+                        var id = item.Ids != null && item.Ids.Length > 0 ? item.Ids[0] : 0;
+                        var filtered = await ReleaseTagFilter.IsTitleFilteredAsync(
+                            filter,
+                            item.Name,
+                            fetchVersions == null ? (Func<Task<List<DispatcharrVodProvider>>>)null : () => fetchVersions(id)).ConfigureAwait(false);
+                        if (filtered)
+                        {
+                            hidden[item] = true;
+                        }
+                    }
+                    finally
+                    {
+                        sem.Release();
+                    }
+                });
+
+            await Task.WhenAll(checks).ConfigureAwait(false);
+            return hidden.IsEmpty ? items : items.Where(i => !hidden.ContainsKey(i)).ToList();
+        }
+
         public async Task<object> Get(GetVodDedupedItems request)
         {
             var config = Plugin.Instance?.Configuration;
@@ -719,7 +760,37 @@ namespace Emby.Xtream.Plugin.Api
 
                     await Task.WhenAll(tasks).ConfigureAwait(false);
 
-                    return AggregateVodByStreamId(perCategory);
+                    var items = AggregateVodByStreamId(perCategory);
+
+                    // Pre-release copies (ADR-C014): hidden by the same rule the sync applies,
+                    // so the list does not offer for review what the sync would leave out.
+                    string filterError;
+                    var releaseTagFilter = ReleaseTagFilter.Build(config, out filterError);
+                    if (filterError != null)
+                    {
+                        Logger.Warn("Pre-release filter pattern is invalid, nothing is hidden: {0}", filterError);
+                    }
+
+                    if (releaseTagFilter != null)
+                    {
+                        DispatcharrClient dispatcharr = null;
+                        if (config.EnableDispatcharr && !string.IsNullOrEmpty(config.DispatcharrUrl))
+                        {
+                            var logManager = Plugin.Instance.ApplicationHost.Resolve<ILogManager>();
+                            dispatcharr = new DispatcharrClient(logManager.GetLogger("XtreamTuner.ReleaseTagFilter"));
+                            dispatcharr.Configure(config.DispatcharrUser, config.DispatcharrPass);
+                        }
+
+                        items = await HidePreReleaseCopiesAsync(
+                            items,
+                            releaseTagFilter,
+                            dispatcharr == null
+                                ? (Func<int, Task<List<DispatcharrVodProvider>>>)null
+                                : id => dispatcharr.GetVodMovieProvidersAsync(config.DispatcharrUrl, id, CancellationToken.None),
+                            Math.Max(1, config.SyncParallelism)).ConfigureAwait(false);
+                    }
+
+                    return items;
                 }
             }
             catch (Exception ex)
