@@ -20,6 +20,14 @@ starting at 1.0.0 — independent of upstream
   library and hidden from the de-duplicated movie list, and comes back on its own once a
   provider lists a clean copy. Copies a provider does not tag cannot be detected.
 
+### Fixed
+
+- **Switching to another window and back threw away unsaved changes on the settings page.**
+  Emby reopens the page when its window regains focus, and the page reloaded every setting
+  from the server when it did, including review decisions you had not saved yet. It now keeps
+  the page as it is while it holds unsaved changes; saving, or opening the page fresh, loads
+  it as before. (From andyj682/emby-xtream-dedupe.)
+
 ## [1.10.0] - 2026-10-25
 
 ### Added
