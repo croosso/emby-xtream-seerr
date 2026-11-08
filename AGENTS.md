@@ -187,6 +187,20 @@ The `existingStrms.Length > 10` gate on the ratio check stays. Removing it means
 
 `RemoveExcludedContent`, `CleanupOrphans` and their helpers are in `Service/StrmSyncService.Cleanup.cs` (a partial of `StrmSyncService`). Stryker mutates that whole file; it cannot compile its changes to the rest of `StrmSyncService.cs`, and a line range into that file went stale whenever code was added above it (issue #75). `scripts/check-delete-sites.py` fails CI if a delete call of the sync service appears anywhere else. Run Stryker locally with `DOTNET_ROOT=<dotnet libexec> DOTNET_ROLL_FORWARD=Major ~/.dotnet/tools/dotnet-stryker --config-file ../stryker-config.json` from `Emby.Xtream.Plugin.Tests` (it ships as net8.0).
 
+### Pre-release copies are filtered per version, in the plugin (ADR-C014)
+
+Dispatcharr's M3U account filters (stream name, group, URL) apply to **live streams only**; its
+VOD refresh never reads them. A `HDTS` name filter on an account does nothing for movies.
+
+`EnableReleaseTagFilter` does it here instead. With Dispatcharr, each version is judged by its
+own provider name (`custom_properties.basic_data.name` from `/api/vod/movies/{id}/providers/`),
+not by the merged movie's name, which is one relation's and goes stale: `The Odyssey [HDTS]`
+can hold clean copies, and a clean-named title can hold only telesyncs. A title is left out only
+when every version is tagged, and its files go through `RemoveExcludedContent`. When versions
+were dropped, the kept ones are written as proxy entries even if only one is left; the plain
+Xtream URL would let Dispatcharr pick the dropped copy by account priority. Lookups fail open.
+See [ADR-C014](docs/decisions/croosso/014-pre-release-filter-judges-each-version.md).
+
 ### One sync of each kind at a time, enforced in the service
 
 `MovieProgress.IsRunning` is a fast path for callers, not a lock. The API endpoints and the scheduled tasks both check it and then call, so two runs can pass the check, share `writtenPaths` and the progress object, and have the first to finish clear `IsRunning` while the second is still writing. `StrmSyncService` holds a `SemaphoreSlim` for the whole operation and returns `false` when it declined to run; callers report "already running" from that, not from their own check. `RetryFailedAsync` takes the movie gate because it writes movie files and reuses `_movieProgress`.
