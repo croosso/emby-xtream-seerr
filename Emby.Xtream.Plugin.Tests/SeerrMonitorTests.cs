@@ -68,8 +68,9 @@ namespace Emby.Xtream.Plugin.Tests
                 "{\"id\":" + r.TmdbId + ",\"subject\":\"" + r.Title +
                 "\",\"media\":{\"mediaType\":\"" + r.MediaType + "\",\"tmdbId\":" + r.TmdbId + "}}")) + "]}";
 
+        // The plugin writes an empty set as "" (SerializeIdSet), not "[]".
         private static int[] ParseIds(string json)
-            => JsonSerializer.Deserialize<int[]>(json ?? "[]");
+            => string.IsNullOrEmpty(json) ? new int[0] : JsonSerializer.Deserialize<int[]>(json);
 
         // -----------------------------------------------------------------
         // Movies

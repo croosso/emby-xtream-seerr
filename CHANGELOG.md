@@ -20,8 +20,22 @@ starting at 1.0.0 — independent of upstream
   library and hidden from the de-duplicated movie list, and comes back on its own once a
   provider lists a clean copy. Copies a provider does not tag cannot be detected.
 
+- **Series decisions now follow a show when its ID changes (ADR-F011, ADR-C016)**, as movie
+  decisions already did. When a show comes back under a new ID (a provider reissuing IDs, or on
+  Dispatcharr 0.33 two copies being merged), its exclusion, reviewed or un-reviewed mark and
+  stored episode list move with it during the ordinary sync. It only works for shows whose
+  listing carries a TMDB ID, which for series can be a minority. If you had kept one copy of a
+  show and excluded another, and the merged show keeps the excluded copy's ID, the show stays in
+  your library, and the log names it so you can exclude it again. (From andyj682/emby-xtream-dedupe,
+  adapted to this fork's decision store.)
+
 ### Fixed
 
+- **A series you reviewed could stay out of the library (ADR-C015).** When a provider lists the
+  same title in two languages, for example `EN| Show` and `FR| Show`, the sync keeps one copy, and
+  it used to keep the lowest ID even if you had reviewed the other one. The show then sat in
+  "awaiting review" forever. The sync now keeps the copy you reviewed, so reviewing the French row
+  gives you the French version. If you reviewed both, the log names them so you can un-review one.
 - **Switching to another window and back threw away unsaved changes on the settings page.**
   Emby reopens the page when its window regains focus, and the page reloaded every setting
   from the server when it did, including review decisions you had not saved yet. It now keeps

@@ -129,7 +129,7 @@ Two converters handle this, both registered on `StrmSyncService.JsonOptions` and
 
 ### Decision stores are owned by DecisionStore, not the configuration (ADR-C001)
 
-The seven decision stores (`ExcludedVodStreamIds`, `ExcludedSeriesIds`, `ReviewedVodStreamIdsJson`, `ReviewedSeriesIdsJson`, `UnreviewedVodStreamIdsJson`, `UnreviewedSeriesIdsJson`, `VodDecisionTmdbIdsJson`) have an authoritative home in `decisions.json` under the records root. The configuration fields are mirrors the store refreshes on every mutation — kept so every config backup/copy/restore still carries the decisions and the dashboard needs no new endpoints.
+The eight decision stores (`ExcludedVodStreamIds`, `ExcludedSeriesIds`, `ReviewedVodStreamIdsJson`, `ReviewedSeriesIdsJson`, `UnreviewedVodStreamIdsJson`, `UnreviewedSeriesIdsJson`, `VodDecisionTmdbIdsJson`, `SeriesDecisionTmdbIdsJson`) have an authoritative home in `decisions.json` under the records root. The configuration fields are mirrors the store refreshes on every mutation — kept so every config backup/copy/restore still carries the decisions and the dashboard needs no new endpoints.
 
 Rules that follow:
 
@@ -143,6 +143,11 @@ Rules that follow:
   add to one set without removing from the other. See
   [ADR-C010](docs/decisions/croosso/010-reviewed-and-unreviewed-are-disjoint.md) and
   [ADR-C012](docs/decisions/croosso/012-save-overlap-stays-reviewed.md).
+- **Identity passes run inside the store.** The movie and series identity passes (ADR-F004,
+  ADR-F011) read, move and write decisions in one `Mutate`, and carry un-review tombstones, never
+  onto a reviewed id. A pass ported from andyj682 that writes the config fields directly must be
+  adapted the same way. See
+  [ADR-C016](docs/decisions/croosso/016-series-identity-pass-uses-the-decision-store.md).
 - **A reviewed copy represents a collapsed series.** The de-dup view lists series by raw name
   (`EN| X`, `FR| X`), the sync collapses them by cleaned name and gates only the
   representative. With the gate on, the pick is reviewed first, then stored hash, then lowest
