@@ -137,6 +137,12 @@ namespace Emby.Xtream.Plugin.Service
         /// <summary>The oldest file version this build can read.</summary>
         private const int OldestReadableStoreFormatVersion = 1;
 
+        /// <summary>The version that added the un-review tombstone stores (ADR-F008).</summary>
+        private const int TombstoneStoreFormatVersion = 2;
+
+        /// <summary>The version that added the series identity records (ADR-C016).</summary>
+        private const int SeriesIdentityStoreFormatVersion = 3;
+
         /// <summary>Version of the file actually loaded, for the v1 seeding above. 0 until a load.</summary>
         private int _loadedFileVersion;
 
@@ -582,7 +588,7 @@ namespace Emby.Xtream.Plugin.Service
                         // tombstone record a v1-era build kept, so they seed those members. The
                         // next write upgrades the file to version 2 and the members round-trip
                         // like every other store.
-                        if (_loadedFileVersion == 1)
+                        if (_loadedFileVersion < TombstoneStoreFormatVersion)
                         {
                             var fromConfig = ParseFromConfig(config);
                             loaded.UnreviewedVodStreamIds = fromConfig.UnreviewedVodStreamIds;
@@ -591,7 +597,7 @@ namespace Emby.Xtream.Plugin.Service
 
                         // Before version 3 the series identity records lived only in the
                         // configuration (ADR-C016), so a v1 or v2 file takes them from there.
-                        if (_loadedFileVersion < 3)
+                        if (_loadedFileVersion < SeriesIdentityStoreFormatVersion)
                         {
                             loaded.SeriesDecisionTmdbIds = ParseFromConfig(config).SeriesDecisionTmdbIds;
                         }
@@ -819,8 +825,10 @@ namespace Emby.Xtream.Plugin.Service
                 // empty-or-unreadable; EnsureLoaded seeds them from the configuration mirrors.
                 // In a v2 file, absent and null both mean the tombstone store could not be parsed
                 // when it was written, and the fail-open null contract applies as for every
-                // other JSON store.
-                if (fileState.Version >= StoreFormatVersion)
+                // other JSON store. The bound is the version that introduced the stores, never
+                // StoreFormatVersion: raising that to 3 made every v2 file read as tombstone-less,
+                // and the upgrade then wrote both stores as null.
+                if (fileState.Version >= TombstoneStoreFormatVersion)
                 {
                     state.UnreviewedVodStreamIds = fileState.UnreviewedVodStreamIds == null
                         ? null
@@ -835,7 +843,7 @@ namespace Emby.Xtream.Plugin.Service
                 state.VodDecisionTmdbIds = ReadTmdbMap(fileState.VodDecisionTmdbIds);
 
                 // Older files lack the member entirely; EnsureLoaded seeds it from the mirror.
-                if (fileState.Version >= 3)
+                if (fileState.Version >= SeriesIdentityStoreFormatVersion)
                 {
                     state.SeriesDecisionTmdbIds = ReadTmdbMap(fileState.SeriesDecisionTmdbIds);
                 }

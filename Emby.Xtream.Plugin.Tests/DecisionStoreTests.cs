@@ -307,6 +307,37 @@ namespace Emby.Xtream.Plugin.Tests
         }
 
         [Fact]
+        public void FileBacked_Version2File_KeepsItsTombstonesThroughTheUpgrade()
+        {
+            // Version 2 introduced the tombstone stores, so a v2 file is their authoritative home.
+            // Reading them only from files at the current version lost them on the upgrade to 3:
+            // they loaded as null (unreadable), and the first write saved them as null.
+            using (var dir = new TempDirectory())
+            {
+                var storePath = Path.Combine(dir.Path, "decisions.json");
+                var v2 = "{\"Version\":2,\"ExcludedVodStreamIds\":[],\"ExcludedSeriesIds\":[],\"ReviewedVodStreamIds\":[],\"ReviewedSeriesIds\":[],\"UnreviewedVodStreamIds\":[11,12],\"UnreviewedSeriesIds\":[21],\"VodDecisionTmdbIds\":{}}";
+                File.WriteAllText(storePath, v2);
+                // Mirrors that disagree, so the test sees which source won.
+                var config = new PluginConfiguration
+                {
+                    UnreviewedVodStreamIdsJson = "[99]",
+                    UnreviewedSeriesIdsJson = "[98]",
+                };
+
+                var store = DecisionStore.CreateUnsharedForTests(dir.Path, new NullLogger());
+                var state = store.Read(config);
+                Assert.Equal(new[] { 11, 12 }, state.UnreviewedVodStreamIds.OrderBy(i => i));
+                Assert.Equal(new[] { 21 }, state.UnreviewedSeriesIds);
+
+                store.AddReviewed(config, true, new[] { 7 });
+                var text = File.ReadAllText(storePath);
+                Assert.Contains("\"Version\":3", text);
+                Assert.Contains("\"UnreviewedVodStreamIds\":[11,12]", text);
+                Assert.Contains("\"UnreviewedSeriesIds\":[21]", text);
+            }
+        }
+
+        [Fact]
         public void DecisionStoresEqual_SeesASeriesIdentityChange()
         {
             // Otherwise a restore that differs only there would be treated as settings-only and
