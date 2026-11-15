@@ -48,3 +48,4 @@ what it means in theirs.
 | [ADR-C013](013-exclusion-sees-every-same-name-folder.md) | Exclusion looks at every folder with the name, and respects their TMDB ids | Accepted |
 | [ADR-C014](014-pre-release-filter-judges-each-version.md) | The pre-release filter judges each version by its own provider name | Accepted |
 | [ADR-C015](015-reviewed-copy-represents-the-series.md) | The copy you reviewed represents a collapsed series | Accepted |
+| [ADR-C016](016-series-identity-pass-uses-the-decision-store.md) | The series identity pass runs through the decision store | Accepted |

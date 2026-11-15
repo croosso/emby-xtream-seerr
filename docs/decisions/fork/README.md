@@ -37,6 +37,7 @@ exists, and a bare `ADR-016` anywhere in the tree is unambiguously upstream's.
 | [ADR-F007](007-never-delete-what-the-sync-just-wrote.md) | Never delete a folder the sync just wrote | Accepted |
 | [ADR-F008](008-unreview-tombstones.md) | Un-reviewing must persist, and take the files with it | Accepted |
 | [ADR-F009](009-publish-the-wanted-set.md) | Publish the wanted set as a file | Accepted |
+| [ADR-F011](011-series-decisions-survive-id-changes.md) | Series decisions survive ID changes | Accepted (ported, see [ADR-C016](../croosso/016-series-identity-pass-uses-the-decision-store.md)) |
 
 ADR-F010 was allocated to *own the decision stores instead of the configuration blob*, then
 moved to this repo's own namespace as
@@ -63,3 +64,9 @@ the incoming commits' messages still say F008 for it.
 [`../croosso/001-decision-store-sidecar.md`](../croosso/001-decision-store-sidecar.md)
 (ADR-C001) the same day, when this repo's own ADRs moved out of this sequence entirely —
 see the note above the index. References in git history still say F010 for it.
+
+`011-series-decisions-survive-id-changes.md` is andyj682's **F009** (`0eb606c`), brought in on
+2026-11-15. F009 here is already the wanted-set ADR, and F010 is taken in this tree's history
+(see above), so it took F011. References in andyj682's commits and CHANGELOG say F009 for it.
+The port itself differs from the original in ways recorded in
+[ADR-C016](../croosso/016-series-identity-pass-uses-the-decision-store.md).

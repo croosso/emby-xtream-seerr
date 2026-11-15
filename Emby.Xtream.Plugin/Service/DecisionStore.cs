@@ -10,7 +10,7 @@ using STJ = System.Text.Json;
 namespace Emby.Xtream.Plugin.Service
 {
     /// <summary>
-    /// A point-in-time snapshot of the seven decision stores (ADR-C001). The reviewed, unreviewed
+    /// A point-in-time snapshot of the eight decision stores (ADR-C001, ADR-C016). The reviewed, unreviewed
     /// and identity members are deliberately nullable: <c>null</c> means "the source could not
     /// be parsed", which is not the same as empty, and callers gate on that distinction — see
     /// <see cref="StrmSyncService.DeserializeIdSet"/>. The exclusion members cannot fail to parse
@@ -36,6 +36,12 @@ namespace Emby.Xtream.Plugin.Service
         /// <summary>StreamId → TMDB id. Null when the source field held something that would not parse.</summary>
         public Dictionary<int, int> VodDecisionTmdbIds;
 
+        /// <summary>
+        /// SeriesId → TMDB id (ADR-F011, ADR-C016). Null when the source field held something that
+        /// would not parse.
+        /// </summary>
+        public Dictionary<int, int> SeriesDecisionTmdbIds;
+
         public DecisionState Clone()
         {
             var copy = new DecisionState();
@@ -56,12 +62,15 @@ namespace Emby.Xtream.Plugin.Service
             copy.VodDecisionTmdbIds = VodDecisionTmdbIds == null
                 ? null
                 : new Dictionary<int, int>(VodDecisionTmdbIds);
+            copy.SeriesDecisionTmdbIds = SeriesDecisionTmdbIds == null
+                ? null
+                : new Dictionary<int, int>(SeriesDecisionTmdbIds);
             return copy;
         }
     }
 
     /// <summary>
-    /// The serialized, authoritative home of the seven decision stores (ADR-C001).
+    /// The serialized, authoritative home of the eight decision stores (ADR-C001, ADR-C016).
     /// </summary>
     /// <remarks>
     /// <para>
@@ -119,8 +128,11 @@ namespace Emby.Xtream.Plugin.Service
         /// it, persist, and silently drop the tombstones from the file. Version 1 files are still
         /// read — their tombstone members are seeded from the configuration mirrors, which are
         /// the only tombstone record a v1-era build kept — and are upgraded to v2 on first write.
+        /// 3 added the series identity records (ADR-C016), for the same reason: a v2 build would
+        /// load a v3 file, write it back and drop them. v1 and v2 files seed them from the
+        /// configuration mirror, which is where the series identity pass kept them before.
         /// </summary>
-        private const int StoreFormatVersion = 2;
+        private const int StoreFormatVersion = 3;
 
         /// <summary>The oldest file version this build can read.</summary>
         private const int OldestReadableStoreFormatVersion = 1;
@@ -341,6 +353,18 @@ namespace Emby.Xtream.Plugin.Service
                         + "keeps the identity records it already has, for repair rather than rebuild.");
                 }
 
+                var seriesTmdb = StrmSyncService.DeserializeTmdbMap(incoming.SeriesDecisionTmdbIdsJson);
+                if (seriesTmdb != null)
+                {
+                    state.SeriesDecisionTmdbIds = seriesTmdb;
+                }
+                else if (!string.IsNullOrEmpty(incoming.SeriesDecisionTmdbIdsJson))
+                {
+                    _logger.Warn(
+                        "The saved configuration's SeriesDecisionTmdbIdsJson could not be parsed. The decision store "
+                        + "keeps the identity records it already has, for repair rather than rebuild.");
+                }
+
                 // The tombstone stores follow the same rule as the reviewed ones. A dashboard
                 // save is the ONLY writer that can remove a tombstone wholesale (re-reviewing),
                 // so not applying a readable value here would make an un-review impossible to
@@ -475,9 +499,16 @@ namespace Emby.Xtream.Plugin.Service
                 return false;
             }
 
-            return SameParsedMap(
+            if (!SameParsedMap(
                 StrmSyncService.DeserializeTmdbMap(a.VodDecisionTmdbIdsJson),
-                StrmSyncService.DeserializeTmdbMap(b.VodDecisionTmdbIdsJson));
+                StrmSyncService.DeserializeTmdbMap(b.VodDecisionTmdbIdsJson)))
+            {
+                return false;
+            }
+
+            return SameParsedMap(
+                StrmSyncService.DeserializeTmdbMap(a.SeriesDecisionTmdbIdsJson),
+                StrmSyncService.DeserializeTmdbMap(b.SeriesDecisionTmdbIdsJson));
         }
 
         private static bool SameParsedSet(HashSet<int> x, HashSet<int> y)
@@ -558,6 +589,13 @@ namespace Emby.Xtream.Plugin.Service
                             loaded.UnreviewedSeriesIds = fromConfig.UnreviewedSeriesIds;
                         }
 
+                        // Before version 3 the series identity records lived only in the
+                        // configuration (ADR-C016), so a v1 or v2 file takes them from there.
+                        if (_loadedFileVersion < 3)
+                        {
+                            loaded.SeriesDecisionTmdbIds = ParseFromConfig(config).SeriesDecisionTmdbIds;
+                        }
+
                         _state = loaded;
                         _loaded = true;
                         return;
@@ -624,6 +662,7 @@ namespace Emby.Xtream.Plugin.Service
                 state.UnreviewedVodStreamIds = StrmSyncService.DeserializeIdSet(config.UnreviewedVodStreamIdsJson);
                 state.UnreviewedSeriesIds = StrmSyncService.DeserializeIdSet(config.UnreviewedSeriesIdsJson);
                 state.VodDecisionTmdbIds = StrmSyncService.DeserializeTmdbMap(config.VodDecisionTmdbIdsJson);
+                state.SeriesDecisionTmdbIds = StrmSyncService.DeserializeTmdbMap(config.SeriesDecisionTmdbIdsJson);
             }
 
             return state;
@@ -698,6 +737,11 @@ namespace Emby.Xtream.Plugin.Service
             {
                 config.VodDecisionTmdbIdsJson = StrmSyncService.SerializeTmdbMap(state.VodDecisionTmdbIds);
             }
+
+            if (state.SeriesDecisionTmdbIds != null)
+            {
+                config.SeriesDecisionTmdbIdsJson = StrmSyncService.SerializeTmdbMap(state.SeriesDecisionTmdbIds);
+            }
         }
 
         private static int[] OrderById(HashSet<int> ids)
@@ -732,6 +776,9 @@ namespace Emby.Xtream.Plugin.Service
             public List<int> UnreviewedSeriesIds { get; set; }
 
             public Dictionary<string, int> VodDecisionTmdbIds { get; set; }
+
+            /// <summary>Added in format version 3; absent in older files.</summary>
+            public Dictionary<string, int> SeriesDecisionTmdbIds { get; set; }
         }
 
         private DecisionState TryReadFile()
@@ -744,8 +791,8 @@ namespace Emby.Xtream.Plugin.Service
                     return null;
                 }
 
-                if (fileState.Version != StoreFormatVersion
-                    && fileState.Version != OldestReadableStoreFormatVersion)
+                if (fileState.Version > StoreFormatVersion
+                    || fileState.Version < OldestReadableStoreFormatVersion)
                 {
                     // A version this build does not understand was written by a newer build. Keep
                     // the file: overwriting it would destroy decisions we cannot even read.
@@ -785,23 +832,12 @@ namespace Emby.Xtream.Plugin.Service
 
                 _loadedFileVersion = fileState.Version;
 
-                state.VodDecisionTmdbIds = new Dictionary<int, int>();
-                if (fileState.VodDecisionTmdbIds != null)
-                {
-                    foreach (var kv in fileState.VodDecisionTmdbIds)
-                    {
-                        int streamId;
-                        if (int.TryParse(kv.Key, NumberStyles.None, CultureInfo.InvariantCulture, out streamId)
-                            && streamId > 0 && kv.Value > 0)
-                        {
-                            state.VodDecisionTmdbIds[streamId] = kv.Value;
-                        }
-                    }
-                }
+                state.VodDecisionTmdbIds = ReadTmdbMap(fileState.VodDecisionTmdbIds);
 
-                if (fileState.VodDecisionTmdbIds == null)
+                // Older files lack the member entirely; EnsureLoaded seeds it from the mirror.
+                if (fileState.Version >= 3)
                 {
-                    state.VodDecisionTmdbIds = null;
+                    state.SeriesDecisionTmdbIds = ReadTmdbMap(fileState.SeriesDecisionTmdbIds);
                 }
 
                 return state;
@@ -836,6 +872,46 @@ namespace Emby.Xtream.Plugin.Service
             }
         }
 
+        /// <summary>A file identity map; null (unreadable when written) stays null.</summary>
+        private static Dictionary<int, int> ReadTmdbMap(Dictionary<string, int> source)
+        {
+            if (source == null)
+            {
+                return null;
+            }
+
+            var map = new Dictionary<int, int>();
+            foreach (var kv in source)
+            {
+                int id;
+                if (int.TryParse(kv.Key, NumberStyles.None, CultureInfo.InvariantCulture, out id)
+                    && id > 0 && kv.Value > 0)
+                {
+                    map[id] = kv.Value;
+                }
+            }
+
+            return map;
+        }
+
+        private static Dictionary<string, int> WriteTmdbMap(Dictionary<int, int> map)
+        {
+            if (map == null)
+            {
+                return null;
+            }
+
+            var ordered = map.Keys.ToList();
+            ordered.Sort();
+            var output = new Dictionary<string, int>(ordered.Count);
+            foreach (var id in ordered)
+            {
+                output[id.ToString(CultureInfo.InvariantCulture)] = map[id];
+            }
+
+            return output;
+        }
+
         private void WriteFileLocked(DecisionState state)
         {
             var fileState = new DecisionFileState();
@@ -855,22 +931,8 @@ namespace Emby.Xtream.Plugin.Service
                 ? null
                 : OrderedList(state.UnreviewedSeriesIds);
 
-            if (state.VodDecisionTmdbIds == null)
-            {
-                fileState.VodDecisionTmdbIds = null;
-            }
-            else
-            {
-                var ordered = state.VodDecisionTmdbIds.Keys.ToList();
-                ordered.Sort();
-                var output = new Dictionary<string, int>(ordered.Count);
-                foreach (var id in ordered)
-                {
-                    output[id.ToString(CultureInfo.InvariantCulture)] = state.VodDecisionTmdbIds[id];
-                }
-
-                fileState.VodDecisionTmdbIds = output;
-            }
+            fileState.VodDecisionTmdbIds = WriteTmdbMap(state.VodDecisionTmdbIds);
+            fileState.SeriesDecisionTmdbIds = WriteTmdbMap(state.SeriesDecisionTmdbIds);
 
             var json = STJ.JsonSerializer.Serialize(fileState);
 

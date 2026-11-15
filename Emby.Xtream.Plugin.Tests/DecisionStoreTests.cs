@@ -264,10 +264,10 @@ namespace Emby.Xtream.Plugin.Tests
                 Assert.Equal(new HashSet<int> { 77 }, state.UnreviewedVodStreamIds);
                 Assert.Equal(new HashSet<int> { 88 }, state.UnreviewedSeriesIds);
 
-                // Any mutation upgrades the file to version 2, carrying the tombstones.
+                // Any mutation upgrades the file to the current version, carrying the tombstones.
                 store.AddReviewed(config, false, new[] { 6 });
                 var text = File.ReadAllText(storePath);
-                Assert.Contains("\"Version\":2", text);
+                Assert.Contains("\"Version\":3", text);
                 Assert.Contains("\"UnreviewedVodStreamIds\":[77]", text);
                 Assert.Contains("\"UnreviewedSeriesIds\":[88]", text);
 
@@ -277,6 +277,45 @@ namespace Emby.Xtream.Plugin.Tests
                 Assert.Equal(new HashSet<int> { 77 }, fresh.UnreviewedVodStreamIds);
                 Assert.Equal(new HashSet<int> { 88 }, fresh.UnreviewedSeriesIds);
             }
+        }
+
+        [Fact]
+        public void FileBacked_Version2File_SeriesIdentitySeedsFromMirrorAndUpgradesToVersion3()
+        {
+            using (var dir = new TempDirectory())
+            {
+                var storePath = Path.Combine(dir.Path, "decisions.json");
+                // As the build before ADR-C016 wrote it: no SeriesDecisionTmdbIds member, the
+                // records only in the configuration.
+                var v2 = "{\"Version\":2,\"ExcludedVodStreamIds\":[],\"ExcludedSeriesIds\":[100],\"ReviewedVodStreamIds\":[],\"ReviewedSeriesIds\":[],\"UnreviewedVodStreamIds\":[],\"UnreviewedSeriesIds\":[],\"VodDecisionTmdbIds\":{}}";
+                File.WriteAllText(storePath, v2);
+                var config = new PluginConfiguration { SeriesDecisionTmdbIdsJson = "{\"100\":500}" };
+
+                var store = DecisionStore.CreateUnsharedForTests(dir.Path, new NullLogger());
+                Assert.Equal(500, store.Read(config).SeriesDecisionTmdbIds[100]);
+
+                store.AddReviewed(config, true, new[] { 7 });
+                var text = File.ReadAllText(storePath);
+                Assert.Contains("\"Version\":3", text);
+                Assert.Contains("\"SeriesDecisionTmdbIds\":{\"100\":500}", text);
+
+                // From here the file wins over a stale mirror.
+                var reloaded = DecisionStore.CreateUnsharedForTests(dir.Path, new NullLogger());
+                var fresh = reloaded.Read(new PluginConfiguration { SeriesDecisionTmdbIdsJson = "{\"100\":999}" });
+                Assert.Equal(500, fresh.SeriesDecisionTmdbIds[100]);
+            }
+        }
+
+        [Fact]
+        public void DecisionStoresEqual_SeesASeriesIdentityChange()
+        {
+            // Otherwise a restore that differs only there would be treated as settings-only and
+            // the store would overwrite it with the current records.
+            var a = new PluginConfiguration { SeriesDecisionTmdbIdsJson = "{\"100\":500}" };
+            var b = new PluginConfiguration { SeriesDecisionTmdbIdsJson = "{\"100\":501}" };
+
+            Assert.False(DecisionStore.DecisionStoresEqual(a, b));
+            Assert.True(DecisionStore.DecisionStoresEqual(a, new PluginConfiguration { SeriesDecisionTmdbIdsJson = "{\"100\": 500}" }));
         }
 
         [Fact]
