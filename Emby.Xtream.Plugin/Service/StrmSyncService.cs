@@ -3348,6 +3348,10 @@ namespace Emby.Xtream.Plugin.Service
                 // alongside config.SeriesEpisodeHashesJson in the naming-flags reset further
                 // down, so the skip paths still see an empty cache on a forced re-sync.
                 var storedHashes = DeserializeEpisodeHashes(config.SeriesEpisodeHashesJson);
+
+                // Series the representative pick moved away from a copy whose episodes are
+                // already on disk. Each is fetched even when delta-unchanged — see below.
+                var switchedRepresentativeIds = new HashSet<int>();
                 if (allSeries.Count > 1)
                 {
                     // Order the candidates before the first-wins pick, so the representative is
@@ -3358,11 +3362,23 @@ namespace Emby.Xtream.Plugin.Service
                     // it pre-fetch-skips, carries nothing, and stays in the no-hash state until
                     // some later run happens to fetch broadly.
                     //
-                    // Prefer a candidate that already has a stored hash so an established
+                    // With the review gate on, a copy the user reviewed comes first (ADR-C015).
+                    // The de-dup view lists copies by their raw name, so "EN| X" and
+                    // "FR| X" are separate rows there, while name cleaning lands both in one
+                    // folder here. They can be different productions of the same story, with
+                    // nothing (no TMDB or TVDB id) to tell them apart, so reviewing one row is
+                    // the user picking that version. The gate below checks the representative
+                    // alone, so an un-reviewed sibling winning the pick also held the show.
+                    //
+                    // Then a candidate that already has a stored hash, so an established
                     // representative never loses its place (even to a lower id appearing later),
                     // then the lowest SeriesId as a deterministic tie-break for a fresh group.
+                    var preferredReviewed = config.RequireReviewBeforeSync
+                        ? GetDecisionStore(config).Read(config).ReviewedSeriesIds
+                        : null;
                     var collapseCandidates = allSeries
-                        .OrderBy(s => storedHashes.ContainsKey(s.SeriesId.ToString(CultureInfo.InvariantCulture)) ? 0 : 1)
+                        .OrderBy(s => preferredReviewed != null && preferredReviewed.Contains(s.SeriesId) ? 0 : 1)
+                        .ThenBy(s => storedHashes.ContainsKey(s.SeriesId.ToString(CultureInfo.InvariantCulture)) ? 0 : 1)
                         .ThenBy(s => s.SeriesId)
                         .ToList();
                     var keptKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -3416,6 +3432,61 @@ namespace Emby.Xtream.Plugin.Service
                             _logger.Debug(
                                 "Collapse: '{0}' -> representative SeriesId {1} (discarded: {2})",
                                 group.Key, representative, string.Join(", ", group.Value));
+
+                            // Moved off a copy whose episodes are on disk: only a reviewed copy
+                            // outranks a stored hash, so this is the user picking another
+                            // version. Delta-unchanged, the new representative would pre-fetch-
+                            // skip and keep the old copy's files under its name, so it is
+                            // fetched this once; the old copy's leftover episodes then go
+                            // through the normal orphan cleanup.
+                            var representativeKey = representative.ToString(CultureInfo.InvariantCulture);
+                            if (!storedHashes.ContainsKey(representativeKey)
+                                && group.Value.Any(id => storedHashes.ContainsKey(id.ToString(CultureInfo.InvariantCulture))))
+                            {
+                                switchedRepresentativeIds.Add(representative);
+                            }
+                        }
+
+                        if (switchedRepresentativeIds.Count > 0)
+                        {
+                            _logger.Info(
+                                "Review gate: {0} show(s) switch to the copy you reviewed and are re-fetched this run: {1}",
+                                switchedRepresentativeIds.Count,
+                                string.Join(", ", collapsedSeries
+                                    .Where(s => switchedRepresentativeIds.Contains(s.SeriesId))
+                                    .Select(s => s.Name + " (" + s.SeriesId.ToString(CultureInfo.InvariantCulture) + ")")
+                                    .Take(15)));
+                        }
+
+                        // Reviewed copies with different provider names in one group ("EN| X"
+                        // and "FR| X" both ticked): two versions the user kept, one folder. The
+                        // pick falls back to hash, then lowest id; say which, so the user can
+                        // un-review the other row. Same-name copies are one row in the de-dup
+                        // view and always reviewed together, so they are not ambiguous.
+                        if (preferredReviewed != null)
+                        {
+                            var ambiguous = allSeries
+                                .Where(s => preferredReviewed.Contains(s.SeriesId))
+                                .GroupBy(s => collapseKeyBySeriesId[s.SeriesId], StringComparer.OrdinalIgnoreCase)
+                                .Where(g => g.Select(s => (s.Name ?? string.Empty).Trim())
+                                    .Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1)
+                                .Select(g => string.Format(
+                                    CultureInfo.InvariantCulture,
+                                    "kept '{0}' ({1}) over {2}",
+                                    allSeries.First(s => s.SeriesId == representativeByKey[g.Key]).Name,
+                                    representativeByKey[g.Key],
+                                    string.Join(", ", g.Where(s => s.SeriesId != representativeByKey[g.Key])
+                                        .Select(s => "'" + s.Name + "' (" + s.SeriesId.ToString(CultureInfo.InvariantCulture) + ")"))))
+                                .ToList();
+                            if (ambiguous.Count > 0)
+                            {
+                                // Info, not Warn: often both are fine (an "EN|" and a "[MULTI-SUB]"
+                                // row of the same audio), and it repeats every run.
+                                _logger.Info(
+                                    "Review gate: {0} show(s) have more than one reviewed version under the same folder name, and only one can be synced. "
+                                    + "Un-review the version you do not want in the de-dup view: {1}",
+                                    ambiguous.Count, string.Join("; ", ambiguous.Take(15)));
+                            }
                         }
 
                         allSeries = collapsedSeries;
@@ -3737,7 +3808,8 @@ namespace Emby.Xtream.Plugin.Service
                             }
                         }
 
-                        var isForcedSeries = forcedSeriesIds.Contains(series.SeriesId);
+                        var isForcedSeries = forcedSeriesIds.Contains(series.SeriesId)
+                            || switchedRepresentativeIds.Contains(series.SeriesId);
                         var isChangedSeries = lastSeriesTs == 0 || seriesLm > lastSeriesTs || isForcedSeries;
 
                         // Pre-fetch smart skip: for delta-unchanged series, locate folder on disk by name

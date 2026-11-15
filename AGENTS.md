@@ -143,6 +143,11 @@ Rules that follow:
   add to one set without removing from the other. See
   [ADR-C010](docs/decisions/croosso/010-reviewed-and-unreviewed-are-disjoint.md) and
   [ADR-C012](docs/decisions/croosso/012-save-overlap-stays-reviewed.md).
+- **A reviewed copy represents a collapsed series.** The de-dup view lists series by raw name
+  (`EN| X`, `FR| X`), the sync collapses them by cleaned name and gates only the
+  representative. With the gate on, the pick is reviewed first, then stored hash, then lowest
+  id, and a switch away from a hashed copy forces a fetch. See
+  [ADR-C015](docs/decisions/croosso/015-reviewed-copy-represents-the-series.md).
 - **Offline config repairs** (e.g. `repair-id-churn.py` candidates installed with Emby stopped) must move `decisions.json` aside too, or the repaired id lists are ignored; the repair script prints the path and the step.
 
 ### Per-item exclusions delete folders directly, not via orphan cleanup
