@@ -3,6 +3,12 @@
     <TargetFramework>net10.0</TargetFramework>
     <LangVersion>latest</LangVersion>
     <IsPackable>false</IsPackable>
+    <!-- No runtimeconfig.dev.json. Recent SDKs on Linux write one for Debug builds that holds
+         only the hot-reload switches and no additionalProbingPaths, and the VsTest that
+         Stryker bundles dereferences that list unchecked while looking for testhost.dll, so
+         discovery aborts and the mutation job finds 0 tests. Without the file, VsTest uses
+         the testhost.dll next to the test assembly. -->
+    <GenerateRuntimeConfigDevFile>false</GenerateRuntimeConfigDevFile>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Release_4_10'">
